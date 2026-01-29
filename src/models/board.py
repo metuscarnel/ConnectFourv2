@@ -9,7 +9,7 @@ from typing import Optional
 import numpy as np
 from numpy.typing import NDArray
 
-from ..utils.constants import ROWS, COLS, EMPTY, WIN_LENGTH, DIRECTIONS
+from ..utils.constants import EMPTY, WIN_LENGTH, DIRECTIONS
 
 
 class Board:
@@ -17,24 +17,33 @@ class Board:
     Représente le plateau de jeu Puissance 4.
     
     CONVENTION : self.grid[0][col] = bas du plateau (fond)
-                 self.grid[ROWS-1][col] = haut du plateau (sommet)
+                 self.grid[rows-1][col] = haut du plateau (sommet)
     
     Gère la grille de jeu, le placement des pions avec gravité,
     et la détection des conditions de victoire dans toutes les directions.
     
     Attributes:
-        grid: Matrice numpy (ROWS x COLS) représentant l'état du plateau
+        rows: Nombre de lignes du plateau
+        cols: Nombre de colonnes du plateau
+        grid: Matrice numpy (rows x cols) représentant l'état du plateau
     """
     
-    def __init__(self) -> None:
+    def __init__(self, rows: int = 6, cols: int = 7) -> None:
         """
-        Initialise un plateau vide de dimensions ROWS x COLS.
+        Initialise un plateau vide de dimensions personnalisées.
         Toutes les cellules sont initialisées à EMPTY (0).
         
-        Convention : grid[0] = ligne du bas, grid[ROWS-1] = ligne du haut
+        Args:
+            rows: Nombre de lignes (par défaut 6)
+            cols: Nombre de colonnes (par défaut 7)
+        
+        Convention : grid[0] = ligne du bas, grid[rows-1] = ligne du haut
         """
-        self.grid: NDArray[np.int_] = np.zeros((ROWS, COLS), dtype=np.int_)
-        print(f"[BOARD DEBUG] Plateau initialisé : {ROWS} lignes x {COLS} colonnes")
+        self.rows: int = rows
+        self.cols: int = cols
+        self.grid: NDArray[np.int_] = np.zeros((rows, cols), dtype=np.int_)
+        self.history: list[tuple[int, int]] = []  # Historique (row, col) pour undo
+        print(f"[BOARD DEBUG] Plateau initialisé : {rows} lignes x {cols} colonnes")
     
     def is_valid_location(self, col: int) -> bool:
         """
@@ -89,8 +98,16 @@ class Board:
     def drop_piece(self, row: int, col: int, piece: int) -> None:
         """
         Place un pion dans la grille à la position spécifiée.
+        Enregistre automatiquement le coup dans l'historique.
         
         Args:
+            row: Index de la ligne
+            col: Index de la colonne
+            piece: Valeur du joueur (PLAYER1 ou PLAYER2)
+        """
+        # Enregistrement dans l'historique AVANT placement
+        self.history.append((row, col))
+        
         # DEBUG : Affichage avant placement
         print(f"\n[BOARD DEBUG] === drop_piece APPELÉ ===")
         print(f"[BOARD DEBUG] Position : row={row}, col={col}, piece={piece}")
@@ -105,11 +122,8 @@ class Board:
         # DEBUG : Affichage de l'état complet de la colonne (de bas en haut)
         column_state = [self.grid[r][col] for r in range(ROWS)]
         print(f"[BOARD DEBUG] État colonne {col} (bas->haut) : {column_state}")
+        print(f"[BOARD DEBUG] Historique complet : {self.history}")
         print(f"[BOARD DEBUG] === drop_piece TERMINÉ ===\n")
-            col: Index de la colonne
-            piece: Valeur du joueur (PLAYER1 ou PLAYER2)
-        """
-        self.grid[row][col] = piece
     
     def check_win(self, piece: int) -> bool:
         """
@@ -276,6 +290,35 @@ class Board:
         """
         return [col for col in range(COLS) if self.is_valid_location(col)]
     
+    def undo_last_move(self) -> bool:
+        """
+        Annule le dernier coup joué en retirant le pion de la grille.
+        
+        Récupère les coordonnées du dernier pion placé depuis l'historique,
+        remet la case à EMPTY, et supprime l'entrée de l'historique.
+        
+        Returns:
+            True si l'annulation a réussi, False si l'historique était vide
+        """
+        # Vérification : historique non vide
+        if not self.history:
+            print("[BOARD DEBUG] Impossible d'annuler : historique vide")
+            return False
+        
+        # Récupération du dernier coup
+        row, col = self.history.pop()
+        
+        print(f"[BOARD DEBUG] Annulation du coup : row={row}, col={col}")
+        print(f"[BOARD DEBUG] Valeur AVANT annulation : grid[{row}][{col}] = {self.grid[row][col]}")
+        
+        # Retrait du pion
+        self.grid[row][col] = EMPTY
+        
+        print(f"[BOARD DEBUG] Valeur APRÈS annulation : grid[{row}][{col}] = {self.grid[row][col]}")
+        print(f"[BOARD DEBUG] Historique restant : {self.history}")
+        
+        return True
+    
     def reset(self) -> None:
         """
         Réinitialise le plateau à l'état initial (toutes cellules vides).
@@ -295,6 +338,35 @@ class Board:
         new_board = Board()
         new_board.grid = np.copy(self.grid)
         return new_board
+    
+    def to_dict(self) -> dict:
+        """
+        Convertit le plateau en dictionnaire pour la sérialisation JSON.
+        
+        Returns:
+            Dictionnaire contenant la grille et l'historique
+        """
+        return {
+            'grid': self.grid.tolist(),  # Conversion numpy array -> liste
+            'history': self.history
+        }
+    
+    @classmethod
+    def from_dict(cls, data: dict) -> 'Board':
+        """
+        Crée une instance de Board à partir d'un dictionnaire.
+        
+        Args:
+            data: Dictionnaire contenant 'grid' et 'history'
+            
+        Returns:
+            Nouvelle instance de Board avec les données restaurées
+        """
+        board = cls()
+        board.grid = np.array(data['grid'], dtype=np.int_)
+        board.history = [tuple(item) for item in data['history']]  # Conversion liste -> tuple
+        print(f"[BOARD DEBUG] Plateau restauré : {len(board.history)} coups dans l'historique")
+        return board
     
     def __str__(self) -> str:
         """

@@ -11,7 +11,7 @@ from numpy.typing import NDArray
 from ..models.board import Board
 from ..utils.constants import (
     ROWS, COLS, EMPTY, PLAYER1, PLAYER2,
-    SQUARESIZE, WIDTH, HEIGHT,
+    SQUARESIZE, WIDTH, HEIGHT, HEADER_HEIGHT,
     BLUE, BLACK, RED, YELLOW, WHITE, GREEN
 )
 
@@ -56,36 +56,49 @@ class PygameView:
         # Police pour les textes (tailles adaptées)
         self.font: pygame.font.Font = pygame.font.SysFont("monospace", 55)
         self.small_font: pygame.font.Font = pygame.font.SysFont("monospace", 30)
+        
+        # Rectangles des boutons pour détection des clics
+        self.undo_button_rect: Optional[pygame.Rect] = None
+        self.save_button_rect: Optional[pygame.Rect] = None
+        self.load_button_rect: Optional[pygame.Rect] = None
     
-    def draw_board(self, board: Board) -> None:
+    def draw_board(self, board: Board, mouse_x: Optional[int] = None, current_player: int = PLAYER1) -> None:
         """
-        Dessine le plateau de jeu avec tous les pions actuels.
+        Dessine le plateau de jeu avec tous les pions actuels en 3 couches distinctes.
         
         Convention stricte : row=0 de la matrice = BAS physique de l'écran.
         
-        Style graphique :
-        - Zone de prévisualisation noire en haut (Y: 0 à SQUARESIZE)
-        - Grand rectangle BLEU pour le plateau (Y: SQUARESIZE à HEIGHT)
-        - Cercles BLANCS pour cases vides, ROUGES pour joueur 1, JAUNES pour joueur 2
-        
-        Formule d'inversion Y obligatoire :
-        pos_y = HEIGHT - (row * SQUARESIZE + SQUARESIZE / 2)
+        Architecture en couches :
+        - COUCHE 0 : Header (zone réservée pour l'UI en haut)
+        - COUCHE 1 : Plateau bleu + pions existants (décalé de HEADER_HEIGHT)
+        - COUCHE 2 : Pion fantôme (optionnel, si mouse_x fourni)
+        - COUCHE 3 : UI fixe (bouton Annuler dans la zone header)
         
         Args:
             board: Instance du plateau à afficher
+            mouse_x: Position X de la souris (optionnel) pour afficher le pion fantôme
+            current_player: Joueur actuel (pour la couleur du pion fantôme)
         """
-        # Fond de la zone de prévisualisation (noir)
+        # ========================================
+        # COUCHE 0 : ZONE HEADER (FOND NOIR)
+        # ========================================
+        
+        # Fond noir pour la zone d'en-tête
         pygame.draw.rect(
             self.screen,
             BLACK,
-            (0, 0, self.width, SQUARESIZE)
+            (0, 0, self.width, HEADER_HEIGHT)
         )
         
-        # Grand rectangle BLEU pour le plateau (masque)
+        # ========================================
+        # COUCHE 1 : PLATEAU + PIONS (DÉCALÉ)
+        # ========================================
+        
+        # Grand rectangle BLEU pour le plateau (décalé vers le bas)
         pygame.draw.rect(
             self.screen,
             BLUE,
-            (0, SQUARESIZE, self.width, self.height - SQUARESIZE)
+            (0, HEADER_HEIGHT, self.width, self.height - HEADER_HEIGHT)
         )
         
         # Dessin des cercles (pions et cases vides)
@@ -94,10 +107,11 @@ class PygameView:
                 # Position centrale X (pas d'inversion)
                 center_x = int(col * SQUARESIZE + SQUARESIZE / 2)
                 
-                # Position centrale Y - INVERSION OBLIGATOIRE
-                # row=0 -> Y grand (bas de l'écran)
-                # row=ROWS-1 -> Y petit (haut du plateau)
-                center_y = int(self.height - (row * SQUARESIZE + SQUARESIZE / 2))
+                # Position centrale Y - INVERSION OBLIGATOIRE + DÉCALAGE HEADER
+                # row=0 -> Y grand (bas du plateau, juste au-dessus du bord inférieur)
+                # row=ROWS-1 -> Y petit (haut du plateau, juste en dessous du header)
+                # Formule : HEADER_HEIGHT + (ROWS * SQUARESIZE) - (row * SQUARESIZE + SQUARESIZE/2)
+                center_y = int(HEADER_HEIGHT + (ROWS * SQUARESIZE) - (row * SQUARESIZE + SQUARESIZE / 2))
                 
                 # Récupération de la valeur de la case
                 cell_value = board.grid[row][col]
@@ -114,6 +128,112 @@ class PygameView:
                 
                 # Dessin du cercle
                 pygame.draw.circle(self.screen, color, (center_x, center_y), self.radius)
+        
+        # ========================================
+        # COUCHE 2 : PION FANTÔME (OPTIONNEL)
+        # ========================================
+        
+        if mouse_x is not None:
+            # Calcul de la colonne survolée
+            col = mouse_x // SQUARESIZE
+            
+            # Vérification que la colonne est dans les limites ET valide
+            if 0 <= col < COLS and board.is_valid_location(col):
+                # Couleur du pion selon le joueur actuel
+                ghost_color = RED if current_player == PLAYER1 else YELLOW
+                
+                # Position centrale du pion fantôme au-dessus de la colonne
+                # Placé juste au-dessus du plateau (dans la partie basse du header)
+                center_x = int(col * SQUARESIZE + SQUARESIZE / 2)
+                center_y = int(HEADER_HEIGHT - SQUARESIZE / 2)
+                
+                # Dessin du pion fantôme dans le header
+                pygame.draw.circle(self.screen, ghost_color, (center_x, center_y), self.radius)
+        
+        # ========================================
+        # COUCHE 3 : UI FIXE (TOUJOURS EN DERNIER)
+        # ========================================
+        
+        # Dessin de l'interface utilisateur (bouton Annuler dans le header)
+        # IMPORTANT : Toujours appeler à la fin pour dessiner par-dessus tout le reste
+        self.draw_ui()
+    
+    def draw_ui(self) -> None:
+        """
+        Dessine les éléments d'interface utilisateur dans la zone header.
+        
+        Zone header : De y=0 à y=HEADER_HEIGHT
+        Contient :
+        - Bouton "ANNULER" en haut à gauche
+        - Bouton "SAUVER" au centre-gauche
+        - Bouton "CHARGER" au centre-droit
+        - Texte "Tour du joueur" à droite (futur)
+        
+        Les rectangles des boutons sont stockés dans self.*_button_rect
+        pour la détection des clics par le contrôleur.
+        
+        IMPORTANT : Les coordonnées sont STATIQUES (jamais liées à la souris)
+        pour garantir que les boutons restent fixes.
+        """
+        # Dimensions des boutons (tous identiques)
+        button_width = 110  # Taille réduite pour 3 boutons
+        button_height = 40
+        button_spacing = 10  # Espacement entre les boutons
+        button_y = 10  # 10px de marge en haut (dans le header)
+        
+        # Police pour les boutons
+        button_font = pygame.font.SysFont("monospace", 18)
+        
+        # ========================================
+        # BOUTON 1 : ANNULER
+        # ========================================
+        button_x1 = 10
+        undo_rect = pygame.Rect(button_x1, button_y, button_width, button_height)
+        
+        # Dessin du fond (gris)
+        pygame.draw.rect(self.screen, (100, 100, 100), undo_rect)
+        pygame.draw.rect(self.screen, WHITE, undo_rect, 3)
+        
+        # Texte
+        text_surface = button_font.render("ANNULER", True, WHITE)
+        text_rect = text_surface.get_rect(center=undo_rect.center)
+        self.screen.blit(text_surface, text_rect)
+        
+        self.undo_button_rect = undo_rect
+        
+        # ========================================
+        # BOUTON 2 : SAUVER
+        # ========================================
+        button_x2 = button_x1 + button_width + button_spacing
+        save_rect = pygame.Rect(button_x2, button_y, button_width, button_height)
+        
+        # Dessin du fond (vert foncé)
+        pygame.draw.rect(self.screen, (50, 120, 50), save_rect)
+        pygame.draw.rect(self.screen, WHITE, save_rect, 3)
+        
+        # Texte
+        text_surface = button_font.render("SAUVER", True, WHITE)
+        text_rect = text_surface.get_rect(center=save_rect.center)
+        self.screen.blit(text_surface, text_rect)
+        
+        self.save_button_rect = save_rect
+        
+        # ========================================
+        # BOUTON 3 : CHARGER
+        # ========================================
+        button_x3 = button_x2 + button_width + button_spacing
+        load_rect = pygame.Rect(button_x3, button_y, button_width, button_height)
+        
+        # Dessin du fond (bleu foncé)
+        pygame.draw.rect(self.screen, (50, 80, 150), load_rect)
+        pygame.draw.rect(self.screen, WHITE, load_rect, 3)
+        
+        # Texte
+        text_surface = button_font.render("CHARGER", True, WHITE)
+        text_rect = text_surface.get_rect(center=load_rect.center)
+        self.screen.blit(text_surface, text_rect)
+        
+        self.load_button_rect = load_rect
     
     def draw_preview_piece(self, col: Optional[int], player: int) -> None:
         """
@@ -158,9 +278,9 @@ class PygameView:
             return
         
         for row, col in winning_positions:
-            # Calcul des coordonnées avec correction de l'axe Y
+            # Calcul des coordonnées avec correction de l'axe Y + décalage header
             center_x = int(col * SQUARESIZE + SQUARESIZE / 2)
-            center_y = int(self.height - (row * SQUARESIZE + SQUARESIZE / 2))
+            center_y = int(HEADER_HEIGHT + (ROWS * SQUARESIZE) - (row * SQUARESIZE + SQUARESIZE / 2))
             
             # Dessin d'un cercle vert épais autour du pion
             pygame.draw.circle(

@@ -153,6 +153,41 @@ class Game:
         
         return self.board.get_winning_positions(self.winner)
     
+    def undo(self) -> bool:
+        """
+        Annule le dernier coup joué.
+        
+        Appelle Board.undo_last_move() pour retirer le pion de la grille,
+        puis inverse le tour pour revenir au joueur précédent.
+        Réinitialise également l'état de la partie si elle était terminée.
+        
+        Returns:
+            True si l'annulation a réussi, False si impossible (historique vide)
+        """
+        print(f"\n[GAME DEBUG] === UNDO APPELÉ ===")
+        print(f"[GAME DEBUG] Joueur actuel AVANT undo : {self.current_player}")
+        print(f"[GAME DEBUG] État de la partie : {self.state.name}")
+        
+        # Tentative d'annulation sur le plateau
+        success = self.board.undo_last_move()
+        
+        if success:
+            # Changement de joueur (retour au joueur précédent)
+            self._switch_player()
+            
+            # Réinitialisation de l'état si la partie était terminée
+            if self.state == GameState.FINISHED:
+                self.state = GameState.IN_PROGRESS
+                self.winner = None
+                print(f"[GAME DEBUG] Partie réactivée (était terminée)")
+            
+            print(f"[GAME DEBUG] Joueur actuel APRÈS undo : {self.current_player}")
+            print(f"[GAME DEBUG] === UNDO RÉUSSI ===\n")
+            return True
+        else:
+            print(f"[GAME DEBUG] === UNDO ÉCHOUÉ ===\n")
+            return False
+    
     def get_valid_moves(self) -> list[int]:
         """
         Retourne la liste des colonnes jouables.
@@ -223,6 +258,41 @@ class Game:
             Nombre de coups dans l'historique
         """
         return len(self.move_history)
+    
+    def to_dict(self) -> dict:
+        """
+        Convertit le jeu en dictionnaire pour la sérialisation JSON.
+        
+        Returns:
+            Dictionnaire contenant l'état complet de la partie
+        """
+        return {
+            'board': self.board.to_dict(),
+            'current_player': self.current_player,
+            'state': self.state.name,  # Conversion enum -> string
+            'winner': self.winner,
+            'move_history': self.move_history
+        }
+    
+    @classmethod
+    def from_dict(cls, data: dict) -> 'Game':
+        """
+        Crée une instance de Game à partir d'un dictionnaire.
+        
+        Args:
+            data: Dictionnaire contenant l'état complet de la partie
+            
+        Returns:
+            Nouvelle instance de Game avec les données restaurées
+        """
+        game = cls()
+        game.board = Board.from_dict(data['board'])
+        game.current_player = data['current_player']
+        game.state = GameState[data['state']]  # Conversion string -> enum
+        game.winner = data['winner']
+        game.move_history = [tuple(item) for item in data['move_history']]
+        print(f"[GAME DEBUG] Partie restaurée : joueur {game.current_player}, état {game.state.name}")
+        return game
     
     def __str__(self) -> str:
         """

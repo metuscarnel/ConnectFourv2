@@ -17,8 +17,9 @@ WIN_LENGTH: int = 4  # Nombre de pions alignés requis pour gagner
 
 # Dimensions graphiques (Pygame)
 SQUARESIZE: int = 70  # Taille d'une case en pixels
+HEADER_HEIGHT: int = 100  # Hauteur de la zone d'en-tête (pour UI)
 WIDTH: int = COLS * SQUARESIZE  # Largeur de la fenêtre
-HEIGHT: int = (ROWS + 1) * SQUARESIZE  # Hauteur (+ 1 ligne pour prévisualisation)
+HEIGHT: int = (ROWS * SQUARESIZE) + HEADER_HEIGHT  # Hauteur totale (plateau + header)
 
 # Couleurs (RGB)
 BLUE: tuple[int, int, int] = (0, 100, 200)      # Fond du plateau

@@ -28,9 +28,11 @@ class AppState(Enum):
     
     Attributes:
         MENU: Affichage du menu principal
+        SETTINGS: Écran de paramètres/configuration
         GAME: Partie en cours
         QUIT: Fermeture de l'application
     """
     MENU = auto()
+    SETTINGS = auto()
     GAME = auto()
     QUIT = auto()

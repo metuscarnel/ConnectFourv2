@@ -1,0 +1,14 @@
+# Dépendances du projet Connect Four
+# Phase 1 : Logique du jeu
+
+# Calcul numérique et gestion de la grille
+numpy>=1.24.0
+
+# Phase 2 : Interface graphique Pygame
+pygame>=2.5.0
+
+# Développement et qualité du code
+# mypy>=1.0.0          # Type checking statique
+# pytest>=7.4.0        # Tests unitaires
+# black>=23.0.0        # Formatage du code
+# flake8>=6.0.0        # Linting

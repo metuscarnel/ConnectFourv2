@@ -25,15 +25,17 @@ class Game:
         move_history: Historique des coups joués [(col, player), ...]
     """
     
-    def __init__(self) -> None:
+    def __init__(self, rows: int = 6, cols: int = 7, start_player: int = PLAYER1) -> None:
         """
-        Initialise une nouvelle partie.
+        Initialise une nouvelle partie avec des paramètres configurables.
         
-        Le joueur 1 (Rouge) commence toujours en premier.
-        L'état initial est IN_PROGRESS.
+        Args:
+            rows: Nombre de lignes du plateau (par défaut 6)
+            cols: Nombre de colonnes du plateau (par défaut 7)
+            start_player: Joueur qui commence (par défaut PLAYER1)
         """
-        self.board: Board = Board()
-        self.current_player: int = PLAYER1  # Le joueur 1 commence
+        self.board: Board = Board(rows=rows, cols=cols)
+        self.current_player: int = start_player
         self.state: GameState = GameState.IN_PROGRESS
         self.winner: Optional[int] = None
         self.move_history: list[tuple[int, int]] = []  # Historique (col, player)

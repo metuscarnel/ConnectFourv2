@@ -50,8 +50,8 @@ class Board:
         Vérifie si une colonne peut encore accueillir un pion.
         
         LOGIQUE CRITIQUE : 
-        - Convention : grid[ROWS-1] = ligne du HAUT
-        - Une colonne est valide si la case du HAUT (grid[ROWS-1][col]) est vide (0)
+        - Convention : grid[rows-1] = ligne du HAUT
+        - Une colonne est valide si la case du HAUT (grid[rows-1][col]) est vide (0)
         
         Args:
             col: Index de la colonne à vérifier (0-indexed)
@@ -60,13 +60,13 @@ class Board:
             True si un pion peut être placé dans cette colonne, False sinon
         """
         # Vérification des bornes
-        if col < 0 or col >= COLS:
+        if col < 0 or col >= self.cols:
             print(f"[BOARD DEBUG] is_valid_location({col}) : FAUX (hors limites)")
             return False
         
-        # CORRECTION CRITIQUE : La colonne est valide si le HAUT (ROWS-1) est vide
-        is_valid = self.grid[ROWS - 1][col] == EMPTY
-        print(f"[BOARD DEBUG] is_valid_location({col}) : {is_valid} (grid[{ROWS-1}][{col}] = {self.grid[ROWS-1][col]})")
+        # CORRECTION CRITIQUE : La colonne est valide si le HAUT (rows-1) est vide
+        is_valid = self.grid[self.rows - 1][col] == EMPTY
+        print(f"[BOARD DEBUG] is_valid_location({col}) : {is_valid} (grid[{self.rows-1}][{col}] = {self.grid[self.rows-1][col]})")
         return is_valid
     
     def get_next_open_row(self, col: int) -> Optional[int]:
@@ -74,8 +74,8 @@ class Board:
         Trouve la première ligne vide dans une colonne (simulation de la gravité).
         
         LOGIQUE CRITIQUE :
-        - Convention : row=0 = BAS physique (fond), row=ROWS-1 = HAUT
-        - Parcourt de row=0 (fond) vers row=ROWS-1 (haut)
+        - Convention : row=0 = BAS physique (fond), row=rows-1 = HAUT
+        - Parcourt de row=0 (fond) vers row=rows-1 (haut)
         - Retourne le PREMIER r où grid[r][col] == 0 (vide)
         
         Args:
@@ -86,8 +86,8 @@ class Board:
         """
         print(f"[BOARD DEBUG] get_next_open_row({col}) : recherche case vide...")
         
-        # PARCOURS CRUCIAL : De 0 (bas) vers ROWS-1 (haut)
-        for row in range(ROWS):
+        # PARCOURS CRUCIAL : De 0 (bas) vers rows-1 (haut)
+        for row in range(self.rows):
             if self.grid[row][col] == EMPTY:
                 print(f"[BOARD DEBUG] -> Trouvé case vide : row={row}")
                 return row
@@ -120,7 +120,7 @@ class Board:
         print(f"[BOARD DEBUG] Valeur APRÈS placement : grid[{row}][{col}] = {self.grid[row][col]}")
         
         # DEBUG : Affichage de l'état complet de la colonne (de bas en haut)
-        column_state = [self.grid[r][col] for r in range(ROWS)]
+        column_state = [self.grid[r][col] for r in range(self.rows)]
         print(f"[BOARD DEBUG] État colonne {col} (bas->haut) : {column_state}")
         print(f"[BOARD DEBUG] Historique complet : {self.history}")
         print(f"[BOARD DEBUG] === drop_piece TERMINÉ ===\n")
@@ -142,8 +142,8 @@ class Board:
             True si le joueur a aligné WIN_LENGTH pions, False sinon
         """
         # Parcours de chaque cellule de la grille
-        for row in range(ROWS):
-            for col in range(COLS):
+        for row in range(self.rows):
+            for col in range(self.cols):
                 # Si la cellule contient le pion du joueur
                 if self.grid[row][col] == piece:
                     # Vérification dans les 4 directions
@@ -184,7 +184,7 @@ class Board:
             col = start_col + i * dx
             
             # Vérification des limites du plateau
-            if row < 0 or row >= ROWS or col < 0 or col >= COLS:
+            if row < 0 or row >= self.rows or col < 0 or col >= self.cols:
                 return False
             
             # Vérification si le pion correspond
@@ -210,8 +210,8 @@ class Board:
             ou liste vide si aucun alignement gagnant n'est trouvé
         """
         # Parcours de chaque cellule de la grille
-        for row in range(ROWS):
-            for col in range(COLS):
+        for row in range(self.rows):
+            for col in range(self.cols):
                 # Si la cellule contient le pion du joueur
                 if self.grid[row][col] == piece:
                     # Vérification dans les 4 directions
@@ -254,7 +254,7 @@ class Board:
             col = start_col + i * dx
             
             # Vérification des limites
-            if row < 0 or row >= ROWS or col < 0 or col >= COLS:
+            if row < 0 or row >= self.rows or col < 0 or col >= self.cols:
                 return []
             
             # Vérification du pion
@@ -288,7 +288,7 @@ class Board:
         Returns:
             Liste des indices de colonnes valides
         """
-        return [col for col in range(COLS) if self.is_valid_location(col)]
+        return [col for col in range(self.cols) if self.is_valid_location(col)]
     
     def undo_last_move(self) -> bool:
         """
@@ -323,7 +323,8 @@ class Board:
         """
         Réinitialise le plateau à l'état initial (toutes cellules vides).
         """
-        self.grid = np.zeros((ROWS, COLS), dtype=np.int_)
+        self.grid = np.zeros((self.rows, self.cols), dtype=np.int_)
+        self.history.clear()
     
     def copy(self) -> 'Board':
         """
@@ -335,8 +336,9 @@ class Board:
         Returns:
             Nouvelle instance de Board avec l'état identique
         """
-        new_board = Board()
+        new_board = Board(rows=self.rows, cols=self.cols)
         new_board.grid = np.copy(self.grid)
+        new_board.history = self.history.copy()
         return new_board
     
     def to_dict(self) -> dict:

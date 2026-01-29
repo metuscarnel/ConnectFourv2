@@ -36,3 +36,17 @@ class AppState(Enum):
     SETTINGS = auto()
     GAME = auto()
     QUIT = auto()
+
+
+class GameMode(Enum):
+    """
+    Représente le mode de jeu sélectionné.
+    
+    Attributes:
+        PVP: Joueur vs Joueur (2 humains)
+        PVAI: Joueur vs IA (1 humain vs 1 IA)
+        AI_VS_AI: IA vs IA (mode démo, 0 humain)
+    """
+    PVP = "PvP"
+    PVAI = "PvAI"
+    AI_VS_AI = "AIvsAI"

@@ -10,8 +10,10 @@ import pygame
 from ..models.game import Game
 from ..views.pygame_view import PygameView
 from ..ai.random_ai import RandomAI
+from ..ai.minimax_ai import MinimaxAI
 from ..utils.enums import AppState
 from ..utils import data_manager
+from ..utils.config_manager import ConfigManager
 
 
 class GameController:
@@ -50,8 +52,11 @@ class GameController:
         self.gamemode: str = "PvP"
         self.ai: Optional[RandomAI] = None
         self.ai_player: int = 2
+        self.ai2: Optional[RandomAI] = None  # Deuxième IA pour le mode AIvsAI
+        self.ai2_player: int = 2  # Numéro du joueur contrôlé par la deuxième IA
         self.clock: pygame.time.Clock = pygame.time.Clock()
         self.fps: int = 60  # Limite de rafraîchissement
+        self.config_manager: ConfigManager = ConfigManager()  # Gestionnaire de configuration
         
         print("[CONTROLLER DEBUG] Contrôleur initialisé - État : MENU")
     
@@ -71,6 +76,10 @@ class GameController:
             if self.state == AppState.MENU:
                 print("[CONTROLLER DEBUG] État : MENU")
                 self.run_menu()
+            
+            elif self.state == AppState.SETTINGS:
+                print("[CONTROLLER DEBUG] État : SETTINGS")
+                self.run_settings()
             
             elif self.state == AppState.GAME:
                 print(f"[CONTROLLER DEBUG] État : GAME (Mode: {self.gamemode})")
@@ -92,6 +101,11 @@ class GameController:
             mouse_x: Position X de la souris (optionnel) pour afficher le pion fantôme
         """
         self.view.draw_board(self.game.board, mouse_x, self.game.get_current_player())
+        
+        # Affichage du sélecteur de profondeur en mode PvAI
+        if self.gamemode == "PvAI" and hasattr(self.ai, 'depth'):
+            self.depth_selector_rects = self.view.draw_depth_selector(self.ai.depth)
+        
         self.view.update_display()
     
     def run_menu(self) -> None:
@@ -101,6 +115,8 @@ class GameController:
         Affiche les options :
         - Joueur vs Joueur
         - Joueur vs IA
+        - MODE DÉMO (IA vs IA)
+        - Paramètres
         
         Transitions possibles :
         - Clic sur un bouton -> GAME
@@ -112,7 +128,7 @@ class GameController:
             self.clock.tick(self.fps)
             
             # Affichage du menu et récupération des rectangles de boutons
-            pvp_rect, pvai_rect = self.view.draw_menu()
+            pvp_rect, pvai_rect, demo_rect, settings_rect = self.view.draw_menu()
             self.view.update_display()
             
             # Gestion des événements
@@ -132,6 +148,7 @@ class GameController:
                         print("[CONTROLLER DEBUG] Mode sélectionné : PvP")
                         self.gamemode = "PvP"
                         self.ai = None
+                        self.ai2 = None
                         self.state = AppState.GAME
                         menu_active = False
                     
@@ -139,10 +156,101 @@ class GameController:
                     elif pvai_rect.collidepoint(mouse_pos):
                         print("[CONTROLLER DEBUG] Mode sélectionné : PvAI")
                         self.gamemode = "PvAI"
-                        self.ai = RandomAI(name="Robot Aléatoire")
+                        # Utilisation de MinimaxAI avec profondeur 4 (configurable)
+                        ai_depth = 4  # Peut être récupéré depuis la config si besoin
+                        self.ai = MinimaxAI(depth=ai_depth, name="Minimax AI")
                         self.ai_player = 2
+                        self.ai2 = None
                         self.state = AppState.GAME
                         menu_active = False
+                    
+                    # Clic sur "MODE DÉMO (IA vs IA)"
+                    elif demo_rect.collidepoint(mouse_pos):
+                        print("[CONTROLLER DEBUG] Mode sélectionné : AIvsAI (MODE DÉMO)")
+                        self.gamemode = "AIvsAI"
+                        # Création de deux IAs : IA1 (Joueur 1) et IA2 (Joueur 2)
+                        self.ai = MinimaxAI(depth=4, name="Minimax IA Rouge")
+                        self.ai_player = 1
+                        self.ai2 = MinimaxAI(depth=4, name="Minimax IA Jaune")
+                        self.ai2_player = 2
+                        self.state = AppState.GAME
+                        menu_active = False
+                    
+                    # Clic sur "Paramètres"
+                    elif settings_rect.collidepoint(mouse_pos):
+                        print("[CONTROLLER DEBUG] Ouverture des paramètres")
+                        self.state = AppState.SETTINGS
+                        menu_active = False
+    
+    def run_settings(self) -> None:
+        """
+        Gère l'affichage et les interactions de l'écran de paramètres.
+        
+        Permet de modifier :
+        - Le nombre de lignes (4-10)
+        - Le nombre de colonnes (4-12)
+        - Le joueur qui commence (Rouge ou Jaune)
+        
+        Transitions possibles :
+        - Clic sur "RETOUR" -> MENU (après sauvegarde)
+        - Fermeture de la fenêtre -> QUIT
+        """
+        settings_active = True
+        
+        while settings_active and self.state == AppState.SETTINGS:
+            self.clock.tick(self.fps)
+            
+            # Récupération de la configuration actuelle
+            config = self.config_manager.get_config()
+            
+            # Affichage de l'écran de paramètres
+            rects = self.view.draw_settings(config)
+            self.view.update_display()
+            
+            # Gestion des événements
+            for event in pygame.event.get():
+                # Fermeture de la fenêtre
+                if event.type == pygame.QUIT:
+                    self.state = AppState.QUIT
+                    settings_active = False
+                    break
+                
+                # Clic de souris sur les boutons
+                if event.type == pygame.MOUSEBUTTONDOWN:
+                    mouse_pos = event.pos
+                    
+                    # Bouton [-] pour les lignes
+                    if rects['rows_minus'].collidepoint(mouse_pos):
+                        if self.config_manager.decrement_rows():
+                            print(f"[SETTINGS DEBUG] Lignes : {self.config_manager.rows}")
+                    
+                    # Bouton [+] pour les lignes
+                    elif rects['rows_plus'].collidepoint(mouse_pos):
+                        if self.config_manager.increment_rows():
+                            print(f"[SETTINGS DEBUG] Lignes : {self.config_manager.rows}")
+                    
+                    # Bouton [-] pour les colonnes
+                    elif rects['cols_minus'].collidepoint(mouse_pos):
+                        if self.config_manager.decrement_cols():
+                            print(f"[SETTINGS DEBUG] Colonnes : {self.config_manager.cols}")
+                    
+                    # Bouton [+] pour les colonnes
+                    elif rects['cols_plus'].collidepoint(mouse_pos):
+                        if self.config_manager.increment_cols():
+                            print(f"[SETTINGS DEBUG] Colonnes : {self.config_manager.cols}")
+                    
+                    # Bouton toggle pour le joueur qui commence
+                    elif rects['player_toggle'].collidepoint(mouse_pos):
+                        self.config_manager.toggle_start_player()
+                        player_name = "Rouge" if self.config_manager.start_player == 1 else "Jaune"
+                        print(f"[SETTINGS DEBUG] Joueur qui commence : {player_name}")
+                    
+                    # Bouton RETOUR
+                    elif rects['back'].collidepoint(mouse_pos):
+                        print("[SETTINGS DEBUG] Sauvegarde de la configuration et retour au menu")
+                        self.config_manager.save_config()
+                        self.state = AppState.MENU
+                        settings_active = False
     
     def run_game(self) -> None:
         """
@@ -158,13 +266,40 @@ class GameController:
         - Fin de partie -> Retour au MENU (après 4 secondes ou touche M)
         - Fermeture de la fenêtre -> QUIT
         """
-        # Initialisation d'une nouvelle partie
-        self.game = Game()
+        # Récupération de la configuration actuelle
+        config = self.config_manager.get_config()
+        rows = config['rows']
+        cols = config['cols']
+        start_player = config['start_player']
+        
+        # Stockage des rectangles du sélecteur de profondeur
+        self.depth_selector_rects = None
+        
+        # Stockage des rectangles du sélecteur de profondeur
+        self.depth_selector_rects = None
+        
+        # Redimensionnement de la fenêtre si nécessaire
+        from ..utils.constants import SQUARESIZE, HEADER_HEIGHT
+        new_width = cols * SQUARESIZE
+        new_height = rows * SQUARESIZE + HEADER_HEIGHT
+        
+        if new_width != self.view.width or new_height != self.view.height:
+            print(f"[CONTROLLER DEBUG] Redimensionnement de la fenêtre : {new_width}x{new_height}")
+            self.view.width = new_width
+            self.view.height = new_height
+            self.view.screen = pygame.display.set_mode((new_width, new_height))
+        
+        # Initialisation d'une nouvelle partie avec les paramètres configurés
+        self.game = Game(rows=rows, cols=cols, start_player=start_player)
         
         print(f"\n[CONTROLLER DEBUG] === NOUVELLE PARTIE ({self.gamemode}) ===")
+        print(f"[CONTROLLER DEBUG] Configuration : {rows}x{cols}, Joueur {start_player} commence")
         if self.gamemode == "PvAI":
             print(f"[CONTROLLER DEBUG] IA : {self.ai.name}")
             print(f"[CONTROLLER DEBUG] IA contrôle le joueur {self.ai_player}\n")
+        elif self.gamemode == "AIvsAI":
+            print(f"[CONTROLLER DEBUG] MODE DÉMO - IA1 : {self.ai.name} (Joueur {self.ai_player})")
+            print(f"[CONTROLLER DEBUG] MODE DÉMO - IA2 : {self.ai2.name} (Joueur {self.ai2_player})\n")
         
         # Dessin initial du plateau vide avec bouton UI
         self._refresh_game_display()
@@ -177,24 +312,113 @@ class GameController:
             # Limitation du framerate
             self.clock.tick(self.fps)
             
-            # === GESTION DU TOUR DE L'IA ===
-            if self.gamemode == "PvAI" and self.game.get_current_player() == self.ai_player:
-                print(f"\n[CONTROLLER DEBUG] === TOUR DE L'IA ===")
+            # === GESTION DU MODE AI VS AI (DÉMO) ===
+            if self.gamemode == "AIvsAI":
+                current_player = self.game.get_current_player()
+                print(f"\n[CONTROLLER DEBUG] === TOUR DE L'IA (Joueur {current_player}) ===")
                 
-                # Pause pour rendre le jeu plus naturel
-                pygame.time.wait(500)  # 0.5 seconde
+                # Sélection de l'IA appropriée
+                current_ai = self.ai if current_player == self.ai_player else self.ai2
+                print(f"[CONTROLLER DEBUG] IA active : {current_ai.name}, Profondeur : {current_ai.depth}")
                 
-                # L'IA choisit son coup
-                ai_column = self.ai.get_move(self.game.board)
+                # Étape 1 : Affichage "L'IA analyse..."
+                self.view.draw_board(self.game.board)
+                self.view.draw_thinking_bar(50, f"{current_ai.name} analyse...")
+                self.view.update_display()
+                
+                # Pause courte
+                pygame.time.wait(200)
+                
+                # Étape 2 : Calcul du coup par l'IA
+                ai_column = current_ai.get_move(self.game.board)
                 
                 if ai_column is not None:
-                    print(f"[CONTROLLER DEBUG] IA joue en colonne {ai_column}")
+                    print(f"[CONTROLLER DEBUG] {current_ai.name} choisit la colonne {ai_column}")
                     
-                    # Placement du pion de l'IA
+                    # Étape 3 : Récupération des scores
+                    if hasattr(current_ai, 'get_last_scores'):
+                        column_scores = current_ai.get_last_scores()
+                    else:
+                        column_scores = {}
+                    
+                    # Étape 4 : Affichage des scores AVANT de jouer
+                    if column_scores and isinstance(current_ai, MinimaxAI):
+                        self.view.draw_board(
+                            self.game.board,
+                            ai_scores=column_scores,
+                            ai_player=current_player,
+                            current_player=current_player
+                        )
+                        self.view.update_display()
+                        
+                        # Étape 5 : PAUSE pour suivre (500ms en mode démo)
+                        pygame.time.wait(500)
+                    
+                    # Étape 6 : Placement du pion
+                    print(f"[CONTROLLER DEBUG] Placement du pion en colonne {ai_column}")
                     success = self.game.play_turn(ai_column)
                     
                     if success:
                         # Mise à jour de l'affichage
+                        self._refresh_game_display()
+                        
+                        # Vérification de la fin de partie
+                        if self.game.is_game_over():
+                            self._handle_game_over()
+                            game_over = True
+                            continue
+                else:
+                    print(f"[CONTROLLER DEBUG] ERREUR : {current_ai.name} n'a pas pu choisir de coup")
+            
+            # === GESTION DU TOUR DE L'IA (MODE PvAI) ===
+            elif self.gamemode == "PvAI" and self.game.get_current_player() == self.ai_player:
+                print(f"\n[CONTROLLER DEBUG] === TOUR DE L'IA ===")
+                print(f"[CONTROLLER DEBUG] Profondeur actuelle : {self.ai.depth}")
+                
+                # Étape 1 : Affichage "L'IA analyse..."
+                self.view.draw_board(self.game.board)
+                self.view.draw_thinking_bar(50, "L'IA analyse...")
+                self.view.update_display()
+                
+                # Pause pour rendre le jeu plus naturel
+                pygame.time.wait(300)
+                
+                # Étape 2 : Calcul du coup par l'IA (Minimax)
+                ai_column = self.ai.get_move(self.game.board)
+                
+                if ai_column is not None:
+                    print(f"[CONTROLLER DEBUG] IA choisit la colonne {ai_column}")
+                    
+                    # Étape 3 : Récupération des scores calculés
+                    if hasattr(self.ai, 'get_last_scores'):
+                        column_scores = self.ai.get_last_scores()
+                    else:
+                        column_scores = {}
+                    
+                    # Étape 4 : Affichage des scores AVANT de jouer le coup
+                    if column_scores and isinstance(self.ai, MinimaxAI):
+                        print(f"[CONTROLLER DEBUG] Affichage des scores avant le coup")
+                        # Rafraîchissement avec scores intégrés dans draw_board
+                        self.view.draw_board(
+                            self.game.board,
+                            ai_scores=column_scores,
+                            ai_player=self.ai_player,
+                            current_player=self.game.get_current_player()
+                        )
+                        # Affichage du sélecteur de profondeur
+                        if hasattr(self.ai, 'depth'):
+                            self.depth_selector_rects = self.view.draw_depth_selector(self.ai.depth)
+                        self.view.update_display()
+                        
+                        # Étape 5 : PAUSE pour lire les scores (1 seconde)
+                        pygame.time.wait(1000)
+                    
+                    # Étape 6 : Placement du pion de l'IA
+                    print(f"[CONTROLLER DEBUG] Placement du pion en colonne {ai_column}")
+                    success = self.game.play_turn(ai_column)
+                    
+                    if success:
+                        # Mise à jour de l'affichage après le coup
                         self._refresh_game_display()
                         
                         # Vérification de la fin de partie
@@ -213,9 +437,19 @@ class GameController:
                     game_over = True
                     break
                 
+                # Touche ECHAP pour quitter (utile en mode démo)
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        print("[CONTROLLER DEBUG] Touche ÉCHAP pressée - Retour au menu")
+                        self.state = AppState.MENU
+                        game_over = True
+                        break
+                
                 # Mouvement de la souris : affichage du pion fantôme (uniquement pour le joueur humain)
                 if event.type == pygame.MOUSEMOTION:
-                    # Ne pas afficher le pion fantôme pendant le tour de l'IA
+                    # Ne pas afficher le pion fantôme en mode AIvsAI ou pendant le tour de l'IA
+                    if self.gamemode == "AIvsAI":
+                        continue
                     if self.gamemode == "PvAI" and self.game.get_current_player() == self.ai_player:
                         continue
                     
@@ -226,6 +460,26 @@ class GameController:
                 # Clic de souris : gestion avec distinction stricte UI vs Plateau
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     mouse_pos = event.pos
+                    
+                    # ========================================
+                    # BRANCHE 0 : CLIC SUR SÉLECTEUR DE PROFONDEUR (PvAI uniquement)
+                    # ========================================
+                    if self.gamemode == "PvAI" and self.depth_selector_rects:
+                        # Clic sur bouton [ + ]
+                        if self.depth_selector_rects['plus'].collidepoint(mouse_pos):
+                            if self.ai.depth < 7:  # Limite max
+                                self.ai.depth += 1
+                                print(f"[CONTROLLER DEBUG] Profondeur augmentée à {self.ai.depth}")
+                                self._refresh_game_display()
+                            continue
+                        
+                        # Clic sur bouton [ - ]
+                        elif self.depth_selector_rects['minus'].collidepoint(mouse_pos):
+                            if self.ai.depth > 1:  # Limite min
+                                self.ai.depth -= 1
+                                print(f"[CONTROLLER DEBUG] Profondeur diminuée à {self.ai.depth}")
+                                self._refresh_game_display()
+                            continue
                     
                     # ========================================
                     # BRANCHE 1 : CLIC SUR BOUTON UNDO
@@ -304,6 +558,11 @@ class GameController:
                     # BRANCHE 4 : CLIC SUR LE PLATEAU
                     # ========================================
                     else:
+                        # Ignorer les clics en mode AIvsAI (démo automatique)
+                        if self.gamemode == "AIvsAI":
+                            print("[CONTROLLER DEBUG] Clic ignoré - Mode DÉMO (AIvsAI)")
+                            continue
+                        
                         # Ignorer les clics pendant le tour de l'IA
                         if self.gamemode == "PvAI" and self.game.get_current_player() == self.ai_player:
                             print("[CONTROLLER DEBUG] Clic ignoré - C'est le tour de l'IA")
@@ -350,7 +609,7 @@ class GameController:
         winner = self.game.get_winner()
         if winner is not None:
             winning_positions = self.game.get_winning_positions()
-            self.view.draw_winning_positions(winning_positions)
+            self.view.draw_winning_positions(winning_positions, self.game.board)
         
         # Affichage du message de game over
         self.view.show_game_over(winner)

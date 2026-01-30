@@ -14,6 +14,7 @@ from ..utils.constants import (
     SQUARESIZE, WIDTH, HEIGHT, HEADER_HEIGHT,
     BLUE, BLACK, RED, YELLOW, WHITE, GREEN
 )
+from ..utils.settings_manager import SettingsManager
 
 
 class PygameView:
@@ -38,15 +39,21 @@ class PygameView:
     GAME_AREA_RATIO: float = 0.75  # 75% pour la zone de jeu
     NAV_AREA_RATIO: float = 0.25   # 25% pour le panneau de navigation
     
-    def __init__(self) -> None:
+    def __init__(self, settings_manager: Optional[SettingsManager] = None) -> None:
         """
         Initialise la fenêtre Pygame avec les dimensions calculées dynamiquement.
+        
+        Args:
+            settings_manager: Gestionnaire de paramètres pour les couleurs personnalisées
         
         La fenêtre comprend :
         - Une ligne en haut pour afficher le pion de prévisualisation
         - Le plateau de jeu (ROWS x COLS)
         """
         pygame.init()
+        
+        # Gestionnaire de paramètres
+        self.settings_manager = settings_manager if settings_manager else SettingsManager()
         
         # Utilisation des dimensions depuis constants.py
         self.width: int = WIDTH
@@ -69,6 +76,7 @@ class PygameView:
         self.save_button_rect: Optional[pygame.Rect] = None
         self.load_button_rect: Optional[pygame.Rect] = None
         self.restart_button_rect: Optional[pygame.Rect] = None
+        self.menu_button_rect: Optional[pygame.Rect] = None
     
     def _update_layout(self) -> None:
         """
@@ -142,10 +150,16 @@ class PygameView:
         # COUCHE 1 : PLATEAU + PIONS (DÉCALÉ)
         # ========================================
         
+        # Récupération des couleurs personnalisées
+        grid_color = self.settings_manager.get_color("grid")
+        player1_color = self.settings_manager.get_color("player1")
+        player2_color = self.settings_manager.get_color("player2")
+        empty_color = self.settings_manager.get_color("empty_slot")
+        
         # Grand rectangle BLEU pour le plateau (décalé vers le bas)
         pygame.draw.rect(
             self.screen,
-            BLUE,
+            grid_color,
             (self.grid_start_x, self.grid_start_y + header_height, self.cell_size * COLS, self.cell_size * ROWS)
         )
         
@@ -165,13 +179,13 @@ class PygameView:
                 
                 # Choix de la couleur selon la valeur
                 if cell_value == EMPTY:
-                    color = WHITE  # Case vide = cercle blanc
+                    color = empty_color  # Case vide
                 elif cell_value == PLAYER1:
-                    color = RED    # Joueur 1 = rouge
+                    color = player1_color  # Joueur 1
                 elif cell_value == PLAYER2:
-                    color = YELLOW # Joueur 2 = jaune
+                    color = player2_color  # Joueur 2
                 else:
-                    color = WHITE  # Sécurité
+                    color = empty_color  # Sécurité
                 
                 # Dessin du cercle
                 pygame.draw.circle(self.screen, color, (center_x, center_y), self.cell_radius)
@@ -187,7 +201,7 @@ class PygameView:
             # Vérification que la colonne est dans les limites ET valide
             if 0 <= col < board.cols and board.is_valid_location(col):
                 # Couleur du pion selon le joueur actuel
-                ghost_color = RED if current_player == PLAYER1 else YELLOW
+                ghost_color = player1_color if current_player == PLAYER1 else player2_color
                 
                 # Position centrale du pion fantôme au-dessus de la colonne
                 # Placé juste au-dessus du plateau (dans la partie basse du header)
@@ -231,6 +245,7 @@ class PygameView:
         - Bouton "SAUVER" au centre-gauche
         - Bouton "CHARGER" au centre
         - Bouton "RECOMMENCER" au centre-droit
+        - Bouton "MENU" à droite
         
         Les rectangles des boutons sont stockés dans self.*_button_rect
         pour la détection des clics par le contrôleur.
@@ -239,7 +254,7 @@ class PygameView:
         pour garantir que les boutons restent fixes.
         """
         # Dimensions des boutons (tous identiques)
-        button_width = 110  # Taille réduite pour 4 boutons
+        button_width = 110  # Taille réduite pour 5 boutons
         button_height = 40
         button_spacing = 10  # Espacement entre les boutons
         button_y = 10  # 10px de marge en haut (dans le header)
@@ -314,6 +329,23 @@ class PygameView:
         self.screen.blit(text_surface, text_rect)
         
         self.restart_button_rect = restart_rect
+        
+        # ========================================
+        # BOUTON 5 : MENU (RETOUR)
+        # ========================================
+        button_x5 = button_x4 + button_width + button_spacing
+        menu_rect = pygame.Rect(button_x5, button_y, button_width, button_height)
+        
+        # Dessin du fond (rouge foncé pour indiquer sortie)
+        pygame.draw.rect(self.screen, (150, 50, 50), menu_rect)
+        pygame.draw.rect(self.screen, WHITE, menu_rect, 3)
+        
+        # Texte
+        text_surface = button_font.render("MENU", True, WHITE)
+        text_rect = text_surface.get_rect(center=menu_rect.center)
+        self.screen.blit(text_surface, text_rect)
+        
+        self.menu_button_rect = menu_rect
     
     def draw_game_info(self, game_id: int, move_count: int) -> None:
         """
@@ -554,7 +586,7 @@ class PygameView:
         
         return None
     
-    def draw_menu(self) -> tuple[pygame.Rect, pygame.Rect, pygame.Rect, pygame.Rect, pygame.Rect, pygame.Rect]:
+    def draw_menu(self) -> tuple[pygame.Rect, pygame.Rect, pygame.Rect, pygame.Rect, pygame.Rect, pygame.Rect, pygame.Rect]:
         """
         Affiche le menu principal avec les options de jeu.
         
@@ -564,11 +596,12 @@ class PygameView:
         - Bouton "Joueur vs IA"
         - Bouton "MODE DÉMO (IA vs IA)"
         - Bouton "Historique"
+        - Bouton "PARAMÈTRES"
         - Bouton "IMPORTER (.txt)"
         - Bouton "QUITTER"
         
         Returns:
-            Tuple contenant (pvp, pvai, demo, history, import, quit) pour la détection des clics
+            Tuple contenant (pvp, pvai, demo, history, settings, import, quit) pour la détection des clics
         """
         # Fond bleu foncé
         self.screen.fill((20, 40, 80))
@@ -588,13 +621,13 @@ class PygameView:
         self.screen.blit(subtitle_label, subtitle_rect)
         
         # === BOUTONS ===
-        button_font = pygame.font.SysFont("monospace", 35, bold=True)
+        button_font = pygame.font.SysFont("monospace", 30, bold=True)
         button_width = 500
-        button_height = 65
-        button_spacing = 25
+        button_height = 55
+        button_spacing = 20
         
-        # Position du premier bouton (centré verticalement)
-        start_y = self.height // 2 - 120
+        # Position du premier bouton (plus haut pour que tous soient visibles)
+        start_y = 220
         
         # Bouton 1 : Joueur vs Joueur
         pvp_rect = pygame.Rect(
@@ -656,10 +689,25 @@ class PygameView:
         history_text_rect = history_label.get_rect(center=history_rect.center)
         self.screen.blit(history_label, history_text_rect)
         
-        # Bouton 5 : IMPORTER (.txt)
-        import_rect = pygame.Rect(
+        # Bouton 5 : PARAMÈTRES
+        settings_rect = pygame.Rect(
             self.width // 2 - button_width // 2,
             start_y + (button_height + button_spacing) * 4,
+            button_width,
+            button_height
+        )
+        pygame.draw.rect(self.screen, (100, 100, 100), settings_rect)  # Gris
+        pygame.draw.rect(self.screen, WHITE, settings_rect, 3)  # Contour blanc
+        
+        settings_text = "PARAMETRES"
+        settings_label = button_font.render(settings_text, True, WHITE)
+        settings_text_rect = settings_label.get_rect(center=settings_rect.center)
+        self.screen.blit(settings_label, settings_text_rect)
+        
+        # Bouton 6 : IMPORTER (.txt)
+        import_rect = pygame.Rect(
+            self.width // 2 - button_width // 2,
+            start_y + (button_height + button_spacing) * 5,
             button_width,
             button_height
         )
@@ -671,10 +719,10 @@ class PygameView:
         import_text_rect = import_label.get_rect(center=import_rect.center)
         self.screen.blit(import_label, import_text_rect)
         
-        # Bouton 6 : QUITTER
+        # Bouton 7 : QUITTER
         quit_rect = pygame.Rect(
             self.width // 2 - button_width // 2,
-            start_y + (button_height + button_spacing) * 5,
+            start_y + (button_height + button_spacing) * 6,
             button_width,
             button_height
         )
@@ -693,7 +741,7 @@ class PygameView:
         info_rect = info_label.get_rect(center=(self.width // 2, self.height - 50))
         self.screen.blit(info_label, info_rect)
         
-        return pvp_rect, pvai_rect, demo_rect, history_rect, import_rect, quit_rect
+        return pvp_rect, pvai_rect, demo_rect, history_rect, settings_rect, import_rect, quit_rect
     
     def draw_status_message(self, message: str, msg_type: str = "info") -> None:
         """
@@ -1360,6 +1408,276 @@ class PygameView:
         self.screen.blit(back_text, back_text_rect)
         
         rects['back'] = back_button
+        
+        return rects
+    
+    def draw_settings_menu(self, settings_manager) -> dict[str, any]:
+        """
+        Affiche l'écran de paramètres avec options de personnalisation.
+        
+        Args:
+            settings_manager: Instance de SettingsManager pour récupérer les valeurs actuelles
+            
+        Returns:
+            Dictionnaire contenant les rectangles cliquables et les sliders
+        """
+        # Fond bleu foncé
+        self.screen.fill((20, 40, 80))
+        
+        # Titre
+        title_font = pygame.font.SysFont("monospace", 60, bold=True)
+        title_text = "PARAMETRES"
+        title_label = title_font.render(title_text, True, YELLOW)
+        title_rect = title_label.get_rect(center=(self.width // 2, 80))
+        self.screen.blit(title_label, title_rect)
+        
+        # Police pour les labels
+        label_font = pygame.font.SysFont("monospace", 24, bold=True)
+        value_font = pygame.font.SysFont("monospace", 22)
+        
+        # Dictionnaire pour stocker les rectangles et sliders
+        rects = {}
+        
+        start_y = 180
+        section_spacing = 80
+        
+        # === SECTION COULEURS ===
+        section_title_font = pygame.font.SysFont("monospace", 30, bold=True)
+        colors_title = section_title_font.render("COULEURS", True, WHITE)
+        self.screen.blit(colors_title, (80, start_y))
+        
+        current_y = start_y + 50
+        
+        # Liste des couleurs configurables
+        color_options = [
+            ("player1", "Joueur 1 (Rouge)", 200),
+            ("player2", "Joueur 2 (Jaune)", 200),
+            ("grid", "Grille", 200)
+        ]
+        
+        for color_key, color_label, label_x in color_options:
+            # Label
+            label = label_font.render(color_label, True, WHITE)
+            self.screen.blit(label, (label_x, current_y))
+            
+            # Couleur actuelle
+            current_color = settings_manager.get_color(color_key)
+            
+            # Carrés de couleur avec sliders RGB
+            color_preview_x = label_x + 320
+            color_preview = pygame.Rect(color_preview_x, current_y - 5, 50, 40)
+            pygame.draw.rect(self.screen, current_color, color_preview)
+            pygame.draw.rect(self.screen, WHITE, color_preview, 2)
+            
+            # Valeurs RGB à côté
+            rgb_text = value_font.render(f"R:{current_color[0]} G:{current_color[1]} B:{current_color[2]}", 
+                                        True, WHITE)
+            self.screen.blit(rgb_text, (color_preview_x + 60, current_y + 5))
+            
+            # Stocker les infos pour les sliders
+            rects[f"{color_key}_preview"] = color_preview
+            rects[f"{color_key}_current"] = current_color
+            
+            current_y += 50
+        
+        # === SECTION VOLUME ===
+        current_y += section_spacing
+        volume_title = section_title_font.render("VOLUME", True, WHITE)
+        self.screen.blit(volume_title, (80, current_y))
+        
+        current_y += 50
+        
+        # Volume principal
+        volume_label = label_font.render("Volume principal", True, WHITE)
+        self.screen.blit(volume_label, (200, current_y))
+        
+        volume_value = settings_manager.get_setting("volume", "master") or 50
+        
+        # Slider simple (barre + curseur)
+        slider_x = 400
+        slider_y = current_y + 5
+        slider_width = 200
+        slider_height = 20
+        
+        slider_bg = pygame.Rect(slider_x, slider_y, slider_width, slider_height)
+        pygame.draw.rect(self.screen, (100, 100, 100), slider_bg)
+        pygame.draw.rect(self.screen, WHITE, slider_bg, 2)
+        
+        # Remplissage selon la valeur
+        fill_width = int((volume_value / 100) * slider_width)
+        if fill_width > 0:
+            fill_rect = pygame.Rect(slider_x, slider_y, fill_width, slider_height)
+            pygame.draw.rect(self.screen, (0, 200, 0), fill_rect)
+        
+        # Valeur affichée
+        vol_text = value_font.render(f"{volume_value}%", True, WHITE)
+        self.screen.blit(vol_text, (slider_x + slider_width + 20, current_y + 5))
+        
+        rects['volume_slider'] = slider_bg
+        rects['volume_value'] = volume_value
+        
+        # === SECTION BASE DE DONNÉES ===
+        current_y += section_spacing + 30
+        db_title = section_title_font.render("BASE DE DONNEES", True, WHITE)
+        self.screen.blit(db_title, (80, current_y))
+        
+        current_y += 50
+        
+        # Bouton Réinitialiser BDD
+        reset_button = pygame.Rect(200, current_y, 400, 50)
+        pygame.draw.rect(self.screen, (150, 30, 30), reset_button)
+        pygame.draw.rect(self.screen, WHITE, reset_button, 3)
+        
+        reset_text = label_font.render("VIDER L'HISTORIQUE", True, WHITE)
+        reset_text_rect = reset_text.get_rect(center=reset_button.center)
+        self.screen.blit(reset_text, reset_text_rect)
+        
+        rects['reset_db'] = reset_button
+        
+        # === BOUTON RETOUR ===
+        current_y += 80  # Espacement après le bouton BDD
+        back_button = pygame.Rect(self.width // 2 - 150, current_y, 300, 60)
+        pygame.draw.rect(self.screen, (100, 100, 100), back_button)
+        pygame.draw.rect(self.screen, WHITE, back_button, 3)
+        
+        back_text = section_title_font.render("RETOUR", True, WHITE)
+        back_text_rect = back_text.get_rect(center=back_button.center)
+        self.screen.blit(back_text, back_text_rect)
+        
+        rects['back'] = back_button
+        
+        return rects
+    
+    def draw_confirmation_dialog(self, message: str) -> tuple[pygame.Rect, pygame.Rect]:
+        """
+        Affiche une boîte de dialogue de confirmation avec Oui/Non.
+        
+        Args:
+            message: Message de confirmation à afficher
+            
+        Returns:
+            Tuple (yes_button_rect, no_button_rect)
+        """
+        # Overlay semi-transparent sur tout l'écran
+        overlay = pygame.Surface((self.width, self.height))
+        overlay.set_alpha(180)
+        overlay.fill((0, 0, 0))
+        self.screen.blit(overlay, (0, 0))
+        
+        # Boîte de dialogue
+        dialog_width = 600
+        dialog_height = 300
+        dialog_x = (self.width - dialog_width) // 2
+        dialog_y = (self.height - dialog_height) // 2
+        
+        dialog_rect = pygame.Rect(dialog_x, dialog_y, dialog_width, dialog_height)
+        pygame.draw.rect(self.screen, (40, 60, 100), dialog_rect)
+        pygame.draw.rect(self.screen, YELLOW, dialog_rect, 4)
+        
+        # Message
+        msg_font = pygame.font.SysFont("monospace", 26, bold=True)
+        
+        # Word wrapping simple
+        words = message.split()
+        lines = []
+        current_line = []
+        max_width = dialog_width - 60
+        
+        for word in words:
+            test_line = ' '.join(current_line + [word])
+            test_surface = msg_font.render(test_line, True, WHITE)
+            if test_surface.get_width() <= max_width:
+                current_line.append(word)
+            else:
+                if current_line:
+                    lines.append(' '.join(current_line))
+                current_line = [word]
+        
+        if current_line:
+            lines.append(' '.join(current_line))
+        
+        # Affichage du message
+        line_y = dialog_y + 60
+        for line in lines:
+            line_surface = msg_font.render(line, True, WHITE)
+            line_rect = line_surface.get_rect(center=(self.width // 2, line_y))
+            self.screen.blit(line_surface, line_rect)
+            line_y += 40
+        
+        # Boutons OUI et NON
+        button_width = 150
+        button_height = 60
+        button_y = dialog_y + dialog_height - 90
+        
+        # Bouton OUI (vert)
+        yes_button = pygame.Rect(dialog_x + 80, button_y, button_width, button_height)
+        pygame.draw.rect(self.screen, (50, 180, 50), yes_button)
+        pygame.draw.rect(self.screen, WHITE, yes_button, 3)
+        
+        yes_font = pygame.font.SysFont("monospace", 32, bold=True)
+        yes_text = yes_font.render("OUI", True, WHITE)
+        yes_text_rect = yes_text.get_rect(center=yes_button.center)
+        self.screen.blit(yes_text, yes_text_rect)
+        
+        # Bouton NON (rouge)
+        no_button = pygame.Rect(dialog_x + dialog_width - 80 - button_width, button_y, 
+                               button_width, button_height)
+        pygame.draw.rect(self.screen, (180, 50, 50), no_button)
+        pygame.draw.rect(self.screen, WHITE, no_button, 3)
+        
+        no_text = yes_font.render("NON", True, WHITE)
+        no_text_rect = no_text.get_rect(center=no_button.center)
+        self.screen.blit(no_text, no_text_rect)
+        
+        return yes_button, no_button
+    
+    def draw_color_picker(self, color_key: str, current_color: tuple, position: tuple) -> dict:
+        """
+        Affiche un sélecteur de couleur RGB simple avec sliders.
+        
+        Args:
+            color_key: Clé de la couleur (player1, player2, grid)
+            current_color: Couleur RGB actuelle
+            position: Position (x, y) du sélecteur
+            
+        Returns:
+            Dictionnaire avec les rectangles des sliders RGB
+        """
+        x, y = position
+        rects = {}
+        
+        slider_font = pygame.font.SysFont("monospace", 20)
+        slider_width = 200
+        slider_height = 20
+        spacing = 40
+        
+        rgb_labels = ["R", "G", "B"]
+        rgb_colors = [(255, 0, 0), (0, 255, 0), (0, 0, 255)]
+        
+        for i, (label, color, value) in enumerate(zip(rgb_labels, rgb_colors, current_color)):
+            slider_y = y + i * spacing
+            
+            # Label
+            label_text = slider_font.render(f"{label}:", True, WHITE)
+            self.screen.blit(label_text, (x, slider_y))
+            
+            # Slider
+            slider_x = x + 30
+            slider_rect = pygame.Rect(slider_x, slider_y, slider_width, slider_height)
+            pygame.draw.rect(self.screen, (80, 80, 80), slider_rect)
+            pygame.draw.rect(self.screen, WHITE, slider_rect, 1)
+            
+            # Remplissage
+            fill_width = int((value / 255) * slider_width)
+            if fill_width > 0:
+                fill_rect = pygame.Rect(slider_x, slider_y, fill_width, slider_height)
+                pygame.draw.rect(self.screen, color, fill_rect)
+            
+            # Valeur
+            value_text = slider_font.render(str(value), True, WHITE)
+            self.screen.blit(value_text, (slider_x + slider_width + 10, slider_y))
+            
+            rects[f"{color_key}_{label.lower()}_slider"] = slider_rect
         
         return rects
     

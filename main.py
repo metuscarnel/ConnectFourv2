@@ -8,6 +8,7 @@ Usage:
 
 from src.views.pygame_view import PygameView
 from src.controllers.game_controller import GameController
+from src.utils.settings_manager import SettingsManager
 
 
 def main() -> None:
@@ -25,8 +26,11 @@ def main() -> None:
     3. Partie
     4. Retour au menu
     """
-    # Initialisation de la vue (interface graphique)
-    view = PygameView()
+    # Initialisation du gestionnaire de paramètres
+    settings_manager = SettingsManager()
+    
+    # Initialisation de la vue (interface graphique) avec settings
+    view = PygameView(settings_manager=settings_manager)
     
     # Initialisation du contrôleur (gère la machine à états)
     controller = GameController(view=view)

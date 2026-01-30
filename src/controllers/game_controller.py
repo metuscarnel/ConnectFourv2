@@ -18,6 +18,7 @@ from ..ai.minimax_ai import MinimaxAI
 from ..utils.enums import AppState
 from ..utils import data_manager
 from ..utils.config_manager import ConfigManager
+from ..utils.settings_manager import SettingsManager
 
 
 class GameController:
@@ -61,6 +62,7 @@ class GameController:
         self.clock: pygame.time.Clock = pygame.time.Clock()
         self.fps: int = 60  # Limite de rafraîchissement
         self.config_manager: ConfigManager = ConfigManager()  # Gestionnaire de configuration
+        self.settings_manager: SettingsManager = SettingsManager()  # Gestionnaire de paramètres
         
         print("[CONTROLLER DEBUG] Contrôleur initialisé - État : MENU")
     
@@ -196,8 +198,8 @@ class GameController:
         while menu_active and self.state == AppState.MENU:
             self.clock.tick(self.fps)
             
-            # Affichage du menu et récupération des rectangles de boutons (6 boutons maintenant)
-            pvp_rect, pvai_rect, demo_rect, history_rect, import_rect, quit_rect = self.view.draw_menu()
+            # Affichage du menu et récupération des rectangles de boutons (7 boutons maintenant)
+            pvp_rect, pvai_rect, demo_rect, history_rect, settings_rect, import_rect, quit_rect = self.view.draw_menu()
             self.view.update_display()
             
             # Gestion des événements
@@ -249,6 +251,12 @@ class GameController:
                     elif history_rect.collidepoint(mouse_pos):
                         print("[CONTROLLER DEBUG] Ouverture de l'historique")
                         self.state = AppState.HISTORY_MENU
+                        menu_active = False
+                    
+                    # Clic sur "PARAMÈTRES"
+                    elif settings_rect.collidepoint(mouse_pos):
+                        print("[CONTROLLER DEBUG] Ouverture des paramètres")
+                        self.state = AppState.SETTINGS
                         menu_active = False
                     
                     # Clic sur "IMPORTER (.txt)"
@@ -716,7 +724,17 @@ class GameController:
                         print("[CONTROLLER DEBUG] === FIN TRAITEMENT RECOMMENCER ===\n")
                     
                     # ========================================
-                    # BRANCHE 5 : CLIC SUR LE PLATEAU
+                    # BRANCHE 5 : CLIC SUR BOUTON MENU (RETOUR)
+                    # ========================================
+                    elif self.view.menu_button_rect and self.view.menu_button_rect.collidepoint(mouse_pos):
+                        print("\n[CONTROLLER DEBUG] === CLIC SUR BOUTON MENU ===")
+                        print("[CONTROLLER DEBUG] Retour au menu principal (partie interrompue)")
+                        self.state = AppState.MENU
+                        game_over = True  # Sortir de la boucle
+                        break
+                    
+                    # ========================================
+                    # BRANCHE 6 : CLIC SUR LE PLATEAU
                     # ========================================
                     else:
                         # Ignorer les clics si la partie est terminée
@@ -925,7 +943,7 @@ class GameController:
         # Chargement des parties depuis la base de données
         db = DatabaseManager()
         db.connect()
-        games = db.get_all_games(order_by='coups')
+        games = db.get_all_games()
         db.disconnect()
         
         print(f"[CONTROLLER DEBUG] {len(games)} partie(s) chargée(s)")
@@ -1203,3 +1221,126 @@ class GameController:
         if neighbor_game:
             print(f"[REPLAY DEBUG] Chargement partie {neighbor_id} ({direction})")
             self._load_replay(neighbor_game)
+    
+    def run_settings_menu(self) -> None:
+        """
+        Gère l'affichage et les interactions du menu des paramètres.
+        
+        Permet de configurer :
+        - Les couleurs des joueurs et de la grille
+        - Le volume sonore
+        - La réinitialisation de la base de données
+        """
+        settings_active = True
+        showing_confirmation = False
+        confirmation_rects = None
+        
+        while settings_active and self.state == AppState.SETTINGS:
+            self.clock.tick(self.fps)
+            
+            # Affichage du menu des paramètres
+            rects = self.view.draw_settings_menu(self.settings_manager)
+            
+            # Si une confirmation est en cours, afficher le dialogue par-dessus
+            if showing_confirmation:
+                yes_rect, no_rect = self.view.draw_confirmation_dialog(
+                    "Voulez-vous vraiment effacer tout l'historique des parties ?"
+                )
+                confirmation_rects = (yes_rect, no_rect)
+            
+            self.view.update_display()
+            
+            # Gestion des événements
+            for event in pygame.event.get():
+                # Fermeture de la fenêtre
+                if event.type == pygame.QUIT:
+                    self.state = AppState.QUIT
+                    settings_active = False
+                    break
+                
+                # Clic de souris
+                if event.type == pygame.MOUSEBUTTONDOWN:
+                    mouse_pos = event.pos
+                    
+                    # Si dialogue de confirmation affiché
+                    if showing_confirmation and confirmation_rects:
+                        yes_rect, no_rect = confirmation_rects
+                        
+                        if yes_rect.collidepoint(mouse_pos):
+                            # Confirmation : vider la BDD
+                            print("[SETTINGS DEBUG] Réinitialisation de la BDD confirmée")
+                            from ..utils.db_manager import DatabaseManager
+                            
+                            db = DatabaseManager()
+                            db.connect()
+                            success = db.truncate_games()
+                            db.disconnect()
+                            
+                            if success:
+                                self.view.draw_status_message(
+                                    "Base de données vidée avec succès !",
+                                    "success"
+                                )
+                            else:
+                                self.view.draw_status_message(
+                                    "Erreur lors de la réinitialisation",
+                                    "error"
+                                )
+                            
+                            self.view.update_display()
+                            pygame.time.wait(2000)
+                            showing_confirmation = False
+                        
+                        elif no_rect.collidepoint(mouse_pos):
+                            # Annulation
+                            print("[SETTINGS DEBUG] Réinitialisation annulée")
+                            showing_confirmation = False
+                    
+                    # Sinon, gestion des clics normaux
+                    else:
+                        # Bouton RETOUR
+                        if rects['back'].collidepoint(mouse_pos):
+                            print("[SETTINGS DEBUG] Retour au menu principal")
+                            self.state = AppState.MENU
+                            settings_active = False
+                        
+                        # Bouton Réinitialiser BDD
+                        elif rects['reset_db'].collidepoint(mouse_pos):
+                            print("[SETTINGS DEBUG] Demande de réinitialisation BDD")
+                            showing_confirmation = True
+                        
+                        # Clic sur preview de couleur (pour info, extension future)
+                        elif 'player1_preview' in rects and rects['player1_preview'].collidepoint(mouse_pos):
+                            print("[SETTINGS DEBUG] Clic sur couleur Joueur 1 (à implémenter)")
+                        
+                        elif 'player2_preview' in rects and rects['player2_preview'].collidepoint(mouse_pos):
+                            print("[SETTINGS DEBUG] Clic sur couleur Joueur 2 (à implémenter)")
+                        
+                        elif 'grid_preview' in rects and rects['grid_preview'].collidepoint(mouse_pos):
+                            print("[SETTINGS DEBUG] Clic sur couleur Grille (à implémenter)")
+                        
+                        # Slider de volume (clic pour ajuster)
+                        elif 'volume_slider' in rects and rects['volume_slider'].collidepoint(mouse_pos):
+                            slider_rect = rects['volume_slider']
+                            # Calcul de la position relative dans le slider
+                            relative_x = mouse_pos[0] - slider_rect.x
+                            new_volume = int((relative_x / slider_rect.width) * 100)
+                            new_volume = max(0, min(100, new_volume))  # Clamp entre 0 et 100
+                            
+                            self.settings_manager.update_setting("volume", "master", new_volume)
+                            print(f"[SETTINGS DEBUG] Volume ajusté à {new_volume}%")
+                
+                # Déplacement de souris (pour slider continu)
+                elif event.type == pygame.MOUSEMOTION:
+                    # Si le bouton gauche est enfoncé
+                    if pygame.mouse.get_pressed()[0]:  # Bouton gauche enfoncé
+                        mouse_pos = event.pos
+                        
+                        # Vérifier si on est sur le slider de volume
+                        if 'volume_slider' in rects and rects['volume_slider'].collidepoint(mouse_pos):
+                            slider_rect = rects['volume_slider']
+                            relative_x = mouse_pos[0] - slider_rect.x
+                            new_volume = int((relative_x / slider_rect.width) * 100)
+                            new_volume = max(0, min(100, new_volume))
+                            
+                            self.settings_manager.update_setting("volume", "master", new_volume)

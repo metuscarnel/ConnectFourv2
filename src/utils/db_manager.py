@@ -319,3 +319,96 @@ class DatabaseManager:
             print(f"[DB_REBUILD] ❌ Erreur : {e}")
             if self.connection:
                 self.connection.rollback()
+    
+    def get_all_games(self) -> list:
+        """
+        Récupère toutes les parties de la base de données triées par coups.
+        
+        Returns:
+            Liste de dictionnaires contenant les informations des parties
+        """
+        try:
+            cursor = self.connection.cursor(dictionary=True)
+            query = """
+                SELECT id, coups, coups_symetrique, mode_jeu, statut, 
+                       ligne_gagnante, id_antecedent, id_suivant, created_at
+                FROM games
+                ORDER BY coups ASC
+            """
+            cursor.execute(query)
+            games = cursor.fetchall()
+            cursor.close()
+            
+            print(f"[DB_MANAGER DEBUG] 📋 {len(games)} parties récupérées")
+            return games
+            
+        except Exception as e:
+            print(f"[DB_MANAGER ERROR] Erreur lors de la récupération : {e}")
+            return []
+    
+    def get_game_by_id(self, game_id: int) -> Optional[dict]:
+        """
+        Récupère une partie spécifique par son ID.
+        
+        Args:
+            game_id: ID de la partie à récupérer
+        
+        Returns:
+            Dictionnaire contenant les informations de la partie, ou None si non trouvée
+        """
+        if not self.connection or not self.connection.is_connected():
+            print("[DB_MANAGER ERROR] Pas de connexion active")
+            return None
+        
+        try:
+            cursor = self.connection.cursor(dictionary=True)
+            query = """
+                SELECT id, coups, coups_symetrique, mode_jeu, statut, 
+                       ligne_gagnante, id_antecedent, id_suivant, created_at
+                FROM games
+                WHERE id = %s
+            """
+            cursor.execute(query, (game_id,))
+            game = cursor.fetchone()
+            cursor.close()
+            
+            if game:
+                print(f"[DB_MANAGER DEBUG] 📥 Partie {game_id} récupérée")
+            else:
+                print(f"[DB_MANAGER DEBUG] ⚠️ Partie {game_id} non trouvée")
+            
+            return game
+            
+        except Exception as e:
+            print(f"[DB_MANAGER ERROR] Erreur lors de la récupération de la partie {game_id} : {e}")
+            return None
+    
+    def truncate_games(self) -> bool:
+        """
+        Vide complètement la table games et réinitialise les auto-increment.
+        
+        ⚠️ ATTENTION : Cette opération est irréversible !
+        
+        Returns:
+            True si la réinitialisation a réussi, False sinon
+        """
+        if not self.connection or not self.connection.is_connected():
+            print("[DB_MANAGER ERROR] Pas de connexion active")
+            return False
+        
+        try:
+            cursor = self.connection.cursor()
+            
+            # Vider la table
+            cursor.execute("TRUNCATE TABLE games")
+            self.connection.commit()
+            cursor.close()
+            
+            print("[DB_MANAGER DEBUG] 🗑️ Table 'games' vidée et IDs réinitialisés")
+            return True
+            
+        except Error as e:
+            print(f"[DB_MANAGER ERROR] Erreur lors de la réinitialisation : {e}")
+            if self.connection:
+                self.connection.rollback()
+            return False

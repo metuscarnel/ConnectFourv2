@@ -30,11 +30,13 @@ class AppState(Enum):
         MENU: Affichage du menu principal
         SETTINGS: Écran de paramètres/configuration
         GAME: Partie en cours
+        GAME_OVER: Fin de partie (grille figée, attente action utilisateur)
         QUIT: Fermeture de l'application
     """
     MENU = auto()
     SETTINGS = auto()
     GAME = auto()
+    GAME_OVER = auto()
     QUIT = auto()
 
 

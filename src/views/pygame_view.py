@@ -61,6 +61,7 @@ class PygameView:
         self.undo_button_rect: Optional[pygame.Rect] = None
         self.save_button_rect: Optional[pygame.Rect] = None
         self.load_button_rect: Optional[pygame.Rect] = None
+        self.restart_button_rect: Optional[pygame.Rect] = None
     
     def draw_board(self, board: Board, mouse_x: Optional[int] = None, current_player: int = PLAYER1, ai_scores: Optional[dict] = None, ai_player: int = 2) -> None:
         """
@@ -177,8 +178,8 @@ class PygameView:
         Contient :
         - Bouton "ANNULER" en haut à gauche
         - Bouton "SAUVER" au centre-gauche
-        - Bouton "CHARGER" au centre-droit
-        - Texte "Tour du joueur" à droite (futur)
+        - Bouton "CHARGER" au centre
+        - Bouton "RECOMMENCER" au centre-droit
         
         Les rectangles des boutons sont stockés dans self.*_button_rect
         pour la détection des clics par le contrôleur.
@@ -187,13 +188,13 @@ class PygameView:
         pour garantir que les boutons restent fixes.
         """
         # Dimensions des boutons (tous identiques)
-        button_width = 110  # Taille réduite pour 3 boutons
+        button_width = 110  # Taille réduite pour 4 boutons
         button_height = 40
         button_spacing = 10  # Espacement entre les boutons
         button_y = 10  # 10px de marge en haut (dans le header)
         
         # Police pour les boutons
-        button_font = pygame.font.SysFont("monospace", 18)
+        button_font = pygame.font.SysFont("monospace", 16)
         
         # ========================================
         # BOUTON 1 : ANNULER
@@ -245,6 +246,57 @@ class PygameView:
         self.screen.blit(text_surface, text_rect)
         
         self.load_button_rect = load_rect
+        
+        # ========================================
+        # BOUTON 4 : RECOMMENCER
+        # ========================================
+        button_x4 = button_x3 + button_width + button_spacing
+        restart_rect = pygame.Rect(button_x4, button_y, button_width, button_height)
+        
+        # Dessin du fond (orange)
+        pygame.draw.rect(self.screen, (200, 100, 0), restart_rect)
+        pygame.draw.rect(self.screen, WHITE, restart_rect, 3)
+        
+        # Texte
+        text_surface = button_font.render("RECOMMENCER", True, WHITE)
+        text_rect = text_surface.get_rect(center=restart_rect.center)
+        self.screen.blit(text_surface, text_rect)
+        
+        self.restart_button_rect = restart_rect
+    
+    def draw_game_info(self, game_id: int, move_count: int) -> None:
+        """
+        Affiche les informations de la partie en cours dans le header (côté droit).
+        
+        Affiche :
+        - L'ID de la partie actuelle (ex: "Partie #42")
+        - Le nombre de coups joués (ex: "Coups : 15")
+        
+        Args:
+            game_id: Identifiant unique de la partie
+            move_count: Nombre de coups joués dans la partie
+        """
+        # Police pour les infos
+        info_font = pygame.font.SysFont("monospace", 18, bold=True)
+        
+        # Texte pour l'ID de partie
+        id_text = f"Partie #{game_id}"
+        id_label = info_font.render(id_text, True, WHITE)
+        
+        # Texte pour le nombre de coups
+        moves_text = f"Coups: {move_count}"
+        moves_label = info_font.render(moves_text, True, YELLOW)
+        
+        # Positionnement à droite dans le header
+        # ID en haut à droite
+        id_x = self.width - id_label.get_width() - 15
+        id_y = 10
+        self.screen.blit(id_label, (id_x, id_y))
+        
+        # Nombre de coups juste en dessous
+        moves_x = self.width - moves_label.get_width() - 15
+        moves_y = 35
+        self.screen.blit(moves_label, (moves_x, moves_y))
     
     def draw_preview_piece(self, col: Optional[int], player: int) -> None:
         """
@@ -396,12 +448,35 @@ class PygameView:
         # Affichage des textes
         self.screen.blit(main_label, main_rect)
         self.screen.blit(sub_label, sub_rect)
+    
+    def draw_game_over_instructions(self) -> None:
+        """
+        Affiche les instructions pour les actions disponibles après la fin de partie.
         
-        # Message de fermeture
-        close_text = "Fermeture dans 4 secondes..."
-        close_label = self.small_font.render(close_text, True, WHITE)
-        close_rect = close_label.get_rect(center=(self.width // 2, self.height // 2 + 100))
-        self.screen.blit(close_label, close_rect)
+        Affiche en bas de l'écran :
+        - ECHAP pour retourner au menu
+        - R pour recommencer une partie
+        """
+        # Police pour les instructions
+        instruction_font = pygame.font.SysFont("monospace", 28, bold=True)
+        
+        # Textes d'instructions
+        esc_text = "ECHAP : Retour au menu"
+        restart_text = "R : Recommencer"
+        
+        # Rendu des textes
+        esc_label = instruction_font.render(esc_text, True, WHITE)
+        restart_label = instruction_font.render(restart_text, True, WHITE)
+        
+        # Positionnement en bas de l'écran (centré)
+        y_position = self.height // 2 + 100
+        
+        esc_rect = esc_label.get_rect(center=(self.width // 2, y_position))
+        restart_rect = restart_label.get_rect(center=(self.width // 2, y_position + 40))
+        
+        # Affichage
+        self.screen.blit(esc_label, esc_rect)
+        self.screen.blit(restart_label, restart_rect)
     
     def get_column_from_mouse_pos(self, x_pos: int) -> Optional[int]:
         """

@@ -84,6 +84,10 @@ class GameController:
             elif self.state == AppState.GAME:
                 print(f"[CONTROLLER DEBUG] État : GAME (Mode: {self.gamemode})")
                 self.run_game()
+            
+            elif self.state == AppState.GAME_OVER:
+                print("[CONTROLLER DEBUG] État : GAME_OVER")
+                self.run_game_over()
         
         # Fermeture propre
         print("\n[CONTROLLER DEBUG] === FERMETURE DE L'APPLICATION ===")
@@ -101,6 +105,10 @@ class GameController:
             mouse_x: Position X de la souris (optionnel) pour afficher le pion fantôme
         """
         self.view.draw_board(self.game.board, mouse_x, self.game.get_current_player())
+        
+        # Affichage des informations de la partie (ID et nombre de coups)
+        move_count = len(self.game.move_history)
+        self.view.draw_game_info(self.game.game_id, move_count)
         
         # Affichage du sélecteur de profondeur en mode PvAI
         if self.gamemode == "PvAI" and hasattr(self.ai, 'depth'):
@@ -437,13 +445,20 @@ class GameController:
                     game_over = True
                     break
                 
-                # Touche ECHAP pour quitter (utile en mode démo)
+                # Gestion des touches clavier
                 if event.type == pygame.KEYDOWN:
+                    # Touche ECHAP : Retour au menu (utile en mode démo)
                     if event.key == pygame.K_ESCAPE:
                         print("[CONTROLLER DEBUG] Touche ÉCHAP pressée - Retour au menu")
                         self.state = AppState.MENU
                         game_over = True
                         break
+                    
+                    # Touche R : Recommencer la partie
+                    elif event.key == pygame.K_r:
+                        print("[CONTROLLER DEBUG] Touche R pressée - Reset de la partie")
+                        self.reset_game()
+                        continue
                 
                 # Mouvement de la souris : affichage du pion fantôme (uniquement pour le joueur humain)
                 if event.type == pygame.MOUSEMOTION:
@@ -555,7 +570,18 @@ class GameController:
                         print("[CONTROLLER DEBUG] === FIN TRAITEMENT CHARGER ===\n")
                     
                     # ========================================
-                    # BRANCHE 4 : CLIC SUR LE PLATEAU
+                    # BRANCHE 4 : CLIC SUR BOUTON RECOMMENCER
+                    # ========================================
+                    elif self.view.restart_button_rect and self.view.restart_button_rect.collidepoint(mouse_pos):
+                        print("\n[CONTROLLER DEBUG] === CLIC SUR BOUTON RECOMMENCER ===")
+                        
+                        # Réinitialisation de la partie
+                        self.reset_game()
+                        
+                        print("[CONTROLLER DEBUG] === FIN TRAITEMENT RECOMMENCER ===\n")
+                    
+                    # ========================================
+                    # BRANCHE 5 : CLIC SUR LE PLATEAU
                     # ========================================
                     else:
                         # Ignorer les clics en mode AIvsAI (démo automatique)
@@ -590,17 +616,90 @@ class GameController:
                                     self._handle_game_over()
                                     game_over = True
         
-        # Retour au menu après la partie (si pas de demande de fermeture)
+        # Note : Après la fin de partie, l'état est maintenant GAME_OVER (grille figée)
+        # Cette ligne n'est exécutée que si la partie est interrompue sans game over
         if self.state == AppState.GAME:
             self.state = AppState.MENU
-            print("\n[CONTROLLER DEBUG] Retour au menu principal\n")
+            print("\n[CONTROLLER DEBUG] Retour au menu principal (partie interrompue)\n")
+    
+    def run_game_over(self) -> None:
+        """
+        Gère l'état de fin de partie avec grille figée.
+        
+        Affiche la grille finale avec le résultat et attend une action utilisateur :
+        - ECHAP : Retour au menu principal
+        - R : Recommencer une nouvelle partie avec les mêmes paramètres
+        
+        Les joueurs ne peuvent plus poser de pions, la grille est figée.
+        """
+        print("\n[CONTROLLER DEBUG] === ÉTAT GAME_OVER (Grille figée) ===")
+        
+        game_over_active = True
+        
+        while game_over_active and self.state == AppState.GAME_OVER:
+            # Limitation du framerate
+            self.clock.tick(self.fps)
+            
+            # Gestion des événements
+            for event in pygame.event.get():
+                # Fermeture de la fenêtre
+                if event.type == pygame.QUIT:
+                    self.state = AppState.QUIT
+                    game_over_active = False
+                    break
+                
+                # Gestion des touches clavier
+                if event.type == pygame.KEYDOWN:
+                    # Touche ECHAP : Retour au menu
+                    if event.key == pygame.K_ESCAPE:
+                        print("[CONTROLLER DEBUG] Touche ÉCHAP pressée - Retour au menu")
+                        self.state = AppState.MENU
+                        game_over_active = False
+                        break
+                    
+                    # Touche R : Recommencer une partie
+                    elif event.key == pygame.K_r:
+                        print("[CONTROLLER DEBUG] Touche R pressée - Recommencer une partie")
+                        self.state = AppState.GAME
+                        game_over_active = False
+                        break
+        
+        print("[CONTROLLER DEBUG] === FIN ÉTAT GAME_OVER ===\n")
+    
+    def reset_game(self) -> None:
+        """
+        Réinitialise la partie en cours pour recommencer une nouvelle manche.
+        
+        Cette méthode :
+        - Marque l'ancienne partie comme 'ABANDONNEE' (si en cours)
+        - Appelle game.reset() pour vider le plateau et générer un nouvel ID
+        - Rafraîchit l'affichage pour montrer le plateau vide
+        
+        Peut être appelée à tout moment pendant une partie (même non terminée).
+        """
+        if self.game is None:
+            print("[CONTROLLER DEBUG] Impossible de reset : aucune partie en cours")
+            return
+        
+        print("\n[CONTROLLER DEBUG] === RESET DE LA PARTIE ===")
+        old_id = self.game.game_id
+        
+        # Reset du jeu (génère un nouvel ID et vide le plateau)
+        self.game.reset()
+        
+        print(f"[CONTROLLER DEBUG] Partie {old_id} -> Nouvelle partie {self.game.game_id}")
+        
+        # Rafraîchissement de l'affichage
+        self._refresh_game_display()
+        
+        print("[CONTROLLER DEBUG] === RESET TERMINÉ ===\n")
     
     def _handle_game_over(self) -> None:
         """
         Gère l'affichage de fin de partie.
         
         Centralise la logique d'affichage de victoire/égalité.
-        Attend 4 secondes avant de retourner au menu.
+        Change l'état vers GAME_OVER pour figer la grille.
         """
         # Force un dernier rafraîchissement du plateau
         self.view.draw_board(self.game.board)
@@ -614,6 +713,9 @@ class GameController:
         # Affichage du message de game over
         self.view.show_game_over(winner)
         
+        # Affichage des instructions
+        self.view.draw_game_over_instructions()
+        
         # Mise à jour de l'affichage
         self.view.update_display()
         
@@ -624,5 +726,6 @@ class GameController:
         else:
             print("🤝 Égalité - Plateau rempli!")
         
-        # Attente de 4 secondes avant de retourner au menu
-        pygame.time.wait(4000)
+        # Transition vers l'état GAME_OVER (grille figée)
+        self.state = AppState.GAME_OVER
+        print("[CONTROLLER DEBUG] Transition vers l'état GAME_OVER")

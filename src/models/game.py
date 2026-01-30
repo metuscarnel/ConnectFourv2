@@ -4,10 +4,15 @@ Orchestre les tours, les états de partie et les conditions de fin.
 """
 
 from typing import Optional
+import time
 
 from .board import Board
 from ..utils.constants import PLAYER1, PLAYER2
 from ..utils.enums import GameState
+
+
+# Compteur global pour générer des IDs de partie uniques
+_game_counter = 0
 
 
 class Game:
@@ -18,6 +23,8 @@ class Game:
     alternance des tours, détection des conditions de victoire et d'égalité.
     
     Attributes:
+        game_id: Identifiant unique de la partie
+        game_status: Statut de la partie ('EN_COURS', 'TERMINEE', 'ABANDONNEE')
         board: Instance du plateau de jeu
         current_player: Joueur dont c'est le tour (PLAYER1 ou PLAYER2)
         state: État actuel de la partie (GameState)
@@ -34,11 +41,20 @@ class Game:
             cols: Nombre de colonnes du plateau (par défaut 7)
             start_player: Joueur qui commence (par défaut PLAYER1)
         """
+        # Génération d'un ID unique pour la partie
+        global _game_counter
+        _game_counter += 1
+        self.game_id: int = _game_counter
+        self.game_status: str = 'EN_COURS'
+        
+        # Initialisation du plateau et de l'état de jeu
         self.board: Board = Board(rows=rows, cols=cols)
         self.current_player: int = start_player
         self.state: GameState = GameState.IN_PROGRESS
         self.winner: Optional[int] = None
         self.move_history: list[tuple[int, int]] = []  # Historique (col, player)
+        
+        print(f"[GAME DEBUG] Nouvelle partie créée - ID: {self.game_id}")
     
     def play_turn(self, col: int) -> bool:
         """
@@ -233,13 +249,29 @@ class Game:
         """
         Réinitialise la partie pour une nouvelle manche.
         
-        Remet le plateau à zéro et redémarre avec le joueur 1.
+        Remet le plateau à zéro, redémarre avec le joueur 1,
+        et génère un nouvel ID de partie.
         """
+        # Marquer l'ancienne partie comme abandonnée si elle était en cours
+        if self.game_status == 'EN_COURS':
+            old_id = self.game_id
+            self.game_status = 'ABANDONNEE'
+            print(f"[GAME DEBUG] Partie {old_id} marquée comme ABANDONNEE")
+        
+        # Génération d'un nouvel ID
+        global _game_counter
+        _game_counter += 1
+        self.game_id = _game_counter
+        self.game_status = 'EN_COURS'
+        
+        # Réinitialisation du plateau et de l'état
         self.board.reset()
         self.current_player = PLAYER1
         self.state = GameState.IN_PROGRESS
         self.winner = None
         self.move_history = []
+        
+        print(f"[GAME DEBUG] Nouvelle partie démarrée - ID: {self.game_id}")
     
     def get_board_copy(self) -> Board:
         """

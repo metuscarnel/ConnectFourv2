@@ -19,7 +19,7 @@ WIN_LENGTH: int = 4  # Nombre de pions alignés requis pour gagner
 SQUARESIZE: int = 70  # Taille d'une case en pixels
 HEADER_HEIGHT: int = 100  # Hauteur de la zone d'en-tête (pour UI)
 WIDTH: int = COLS * SQUARESIZE  # Largeur de la fenêtre
-HEIGHT: int = 900  # Hauteur totale agrandie pour afficher tous les boutons du menu
+HEIGHT: int = 750  # Hauteur totale optimisée pour l'historique et les menus
 
 # Couleurs (RGB)
 BLUE: tuple[int, int, int] = (0, 100, 200)      # Fond du plateau

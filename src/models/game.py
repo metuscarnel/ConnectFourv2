@@ -51,8 +51,10 @@ class Game:
         self.board: Board = Board(rows=rows, cols=cols)
         self.current_player: int = start_player
         self.state: GameState = GameState.IN_PROGRESS
+        self.game_state: str = "PLAYING"  # PLAYING ou FINISHED
         self.winner: Optional[int] = None
         self.move_history: list[tuple[int, int]] = []  # Historique (col, player)
+        self.winning_line: list[tuple[int, int]] = []  # Coordonnées de la ligne gagnante
         
         print(f"[GAME DEBUG] Nouvelle partie créée - ID: {self.game_id}")
     
@@ -102,8 +104,11 @@ class Game:
         
         if has_won:
             self.state = GameState.FINISHED
+            self.game_state = "FINISHED"
             self.winner = self.current_player
+            self.winning_line = self.board.get_winning_positions(self.current_player)
             print(f"[DEBUG] 🎉 VICTOIRE détectée pour le joueur {self.current_player}")
+            print(f"[DEBUG] Ligne gagnante : {self.winning_line}")
             return True
         
         # Vérification de l'égalité (plateau plein)
@@ -112,6 +117,7 @@ class Game:
         
         if is_draw:
             self.state = GameState.FINISHED
+            self.game_state = "FINISHED"
             self.winner = None  # Aucun gagnant en cas d'égalité
             print(f"[DEBUG] 🤝 ÉGALITÉ détectée (plateau plein)")
             return True
@@ -166,10 +172,7 @@ class Game:
             Liste des coordonnées (row, col) des pions gagnants,
             ou liste vide si pas de gagnant
         """
-        if self.winner is None:
-            return []
-        
-        return self.board.get_winning_positions(self.winner)
+        return self.winning_line
     
     def undo(self) -> bool:
         """

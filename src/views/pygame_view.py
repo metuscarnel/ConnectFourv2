@@ -63,7 +63,7 @@ class PygameView:
         self.load_button_rect: Optional[pygame.Rect] = None
         self.restart_button_rect: Optional[pygame.Rect] = None
     
-    def draw_board(self, board: Board, mouse_x: Optional[int] = None, current_player: int = PLAYER1, ai_scores: Optional[dict] = None, ai_player: int = 2) -> None:
+    def draw_board(self, board: Board, mouse_x: Optional[int] = None, current_player: int = PLAYER1, ai_scores: Optional[dict] = None, ai_player: int = 2, winning_line: Optional[list[tuple[int, int]]] = None) -> None:
         """
         Dessine le plateau de jeu avec tous les pions actuels en 3 couches distinctes.
         
@@ -75,6 +75,7 @@ class PygameView:
         - COUCHE 2 : Pion fantôme (optionnel, si mouse_x fourni)
         - COUCHE 3 : UI fixe (bouton Annuler dans la zone header)
         - COUCHE 4 : Scores IA (optionnel, si ai_scores fourni)
+        - COUCHE 5 : Ligne gagnante (optionnel, si winning_line fourni)
         
         Args:
             board: Instance du plateau à afficher
@@ -82,6 +83,7 @@ class PygameView:
             current_player: Joueur actuel (pour la couleur du pion fantôme)
             ai_scores: Scores calculés par l'IA (optionnel) pour affichage avant le coup
             ai_player: Numéro du joueur IA (pour la couleur des scores)
+            winning_line: Liste des coordonnées gagnantes (optionnel)
         """
         # ========================================
         # COUCHE 0 : ZONE HEADER (FOND NOIR)
@@ -169,6 +171,14 @@ class PygameView:
         # Affichage des scores IA si fournis (pour visualisation avant le coup)
         if ai_scores is not None and ai_scores:
             self.draw_ai_analysis(ai_scores, board, ai_player)
+        
+        # ========================================
+        # COUCHE 5 : LIGNE GAGNANTE (SI FOURNIE)
+        # ========================================
+        
+        # Mise en valeur des pions gagnants avec contour doré
+        if winning_line and len(winning_line) > 0:
+            self.draw_winning_highlight(winning_line, board)
     
     def draw_ui(self) -> None:
         """
@@ -887,6 +897,93 @@ class PygameView:
         les changements effectués.
         """
         pygame.display.update()
+    
+    def draw_winning_highlight(self, winning_line: list[tuple[int, int]], board: Board) -> None:
+        """
+        Met en valeur les pions gagnants avec un contour doré animé.
+        
+        Args:
+            winning_line: Liste des coordonnées (row, col) des pions gagnants
+            board: Instance du plateau pour calculer les positions
+        """
+        # Couleur dorée avec effet de brillance
+        GOLD = (255, 215, 0)
+        
+        for row, col in winning_line:
+            # Calcul de la position centrale du pion
+            center_x = int(col * SQUARESIZE + SQUARESIZE / 2)
+            center_y = int(HEADER_HEIGHT + (board.rows * SQUARESIZE) - (row * SQUARESIZE + SQUARESIZE / 2))
+            
+            # Dessin de plusieurs cercles concentriques pour effet de brillance
+            pygame.draw.circle(self.screen, GOLD, (center_x, center_y), self.radius + 8, 6)
+            pygame.draw.circle(self.screen, (255, 255, 255), (center_x, center_y), self.radius + 4, 3)
+    
+    def draw_victory_overlay(self, winner: Optional[int], winning_line: list[tuple[int, int]]) -> None:
+        """
+        Affiche un overlay élégant avec le résultat de la partie.
+        
+        Args:
+            winner: Numéro du joueur gagnant (1 ou 2), ou None en cas d'égalité
+            winning_line: Liste des coordonnées gagnantes
+        """
+        # Surface semi-transparente pour l'overlay
+        overlay = pygame.Surface((self.width, self.height))
+        overlay.set_alpha(180)  # Transparence
+        overlay.fill((0, 0, 0))
+        self.screen.blit(overlay, (0, 0))
+        
+        # Rectangle central pour le message
+        box_width = 500
+        box_height = 250
+        box_x = (self.width - box_width) // 2
+        box_y = (self.height - box_height) // 2 - 50
+        
+        # Fond du rectangle (avec bordure)
+        box_rect = pygame.Rect(box_x, box_y, box_width, box_height)
+        pygame.draw.rect(self.screen, (30, 30, 30), box_rect)
+        pygame.draw.rect(self.screen, (255, 215, 0), box_rect, 5)
+        
+        # Texte principal
+        title_font = pygame.font.SysFont("monospace", 48, bold=True)
+        subtitle_font = pygame.font.SysFont("monospace", 24)
+        
+        if winner is not None:
+            # Message de victoire
+            player_name = "ROUGE" if winner == 1 else "JAUNE"
+            player_color = RED if winner == 1 else YELLOW
+            
+            title_text = f"VICTOIRE !"
+            subtitle_text = f"Joueur {player_name}"
+            
+            title_surface = title_font.render(title_text, True, player_color)
+            subtitle_surface = subtitle_font.render(subtitle_text, True, WHITE)
+        else:
+            # Message d'égalité
+            title_text = "MATCH NUL"
+            title_surface = title_font.render(title_text, True, WHITE)
+            subtitle_surface = subtitle_font.render("Plateau rempli", True, (150, 150, 150))
+        
+        # Centrage du texte principal
+        title_rect = title_surface.get_rect(center=(self.width // 2, box_y + 70))
+        subtitle_rect = subtitle_surface.get_rect(center=(self.width // 2, box_y + 130))
+        
+        self.screen.blit(title_surface, title_rect)
+        self.screen.blit(subtitle_surface, subtitle_rect)
+        
+        # Instructions
+        instructions_font = pygame.font.SysFont("monospace", 20)
+        
+        restart_text = "[R] Recommencer"
+        menu_text = "[ECHAP] Menu Principal"
+        
+        restart_surface = instructions_font.render(restart_text, True, GREEN)
+        menu_surface = instructions_font.render(menu_text, True, (150, 150, 255))
+        
+        restart_rect = restart_surface.get_rect(center=(self.width // 2 - 120, box_y + 190))
+        menu_rect = menu_surface.get_rect(center=(self.width // 2 + 120, box_y + 190))
+        
+        self.screen.blit(restart_surface, restart_rect)
+        self.screen.blit(menu_surface, menu_rect)
     
     def wait(self, milliseconds: int) -> None:
         """

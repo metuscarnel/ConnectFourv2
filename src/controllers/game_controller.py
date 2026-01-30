@@ -584,6 +584,11 @@ class GameController:
                     # BRANCHE 5 : CLIC SUR LE PLATEAU
                     # ========================================
                     else:
+                        # Ignorer les clics si la partie est terminée
+                        if self.game.game_state == "FINISHED":
+                            print("[CONTROLLER DEBUG] Clic ignoré - Partie terminée")
+                            continue
+                        
                         # Ignorer les clics en mode AIvsAI (démo automatique)
                         if self.gamemode == "AIvsAI":
                             print("[CONTROLLER DEBUG] Clic ignoré - Mode DÉMO (AIvsAI)")
@@ -614,9 +619,9 @@ class GameController:
                                 # Vérification de la fin de partie
                                 if self.game.is_game_over():
                                     self._handle_game_over()
-                                    game_over = True
+                                    # game_over = True  # Commenté: on reste dans la boucle pour gérer l'affichage
         
-        # Note : Après la fin de partie, l'état est maintenant GAME_OVER (grille figée)
+        # Note : La gestion des touches ECHAP et R continue même après game over
         # Cette ligne n'est exécutée que si la partie est interrompue sans game over
         if self.state == AppState.GAME:
             self.state = AppState.MENU
@@ -696,35 +701,78 @@ class GameController:
     
     def _handle_game_over(self) -> None:
         """
-        Gère l'affichage de fin de partie.
+        Gère l'affichage de fin de partie et la sauvegarde en base de données.
         
         Centralise la logique d'affichage de victoire/égalité.
-        Change l'état vers GAME_OVER pour figer la grille.
+        Sauvegarde automatiquement la partie dans la base de données MySQL.
         """
-        # Force un dernier rafraîchissement du plateau
-        self.view.draw_board(self.game.board)
+        print("\n[CONTROLLER DEBUG] === GESTION FIN DE PARTIE ===")
         
-        # Surbrillance des pions gagnants si applicable
+        # Sauvegarde dans la base de données
+        self._save_game_to_database()
+        
+        # Force un dernier rafraîchissement du plateau avec ligne gagnante
         winner = self.game.get_winner()
-        if winner is not None:
-            winning_positions = self.game.get_winning_positions()
-            self.view.draw_winning_positions(winning_positions, self.game.board)
+        winning_line = self.game.get_winning_positions()
         
-        # Affichage du message de game over
-        self.view.show_game_over(winner)
-        
-        # Affichage des instructions
-        self.view.draw_game_over_instructions()
-        
-        # Mise à jour de l'affichage
+        # Affichage du plateau final avec overlay de victoire
+        self.view.draw_board(self.game.board, winning_line=winning_line)
+        self.view.draw_victory_overlay(winner, winning_line)
         self.view.update_display()
         
         # Message console pour débogage
         if winner is not None:
             player_name = "ROUGE" if winner == 1 else "JAUNE"
             print(f"🎉 Le joueur {player_name} a gagné!")
+            print(f"   Ligne gagnante : {winning_line}")
         else:
             print("🤝 Égalité - Plateau rempli!")
+        
+        print("[CONTROLLER DEBUG] === FIN GESTION ===\n")
+    
+    def _save_game_to_database(self) -> None:
+        """
+        Sauvegarde la partie terminée dans la base de données MySQL.
+        
+        Convertit l'historique des coups en chaîne et appelle le DatabaseManager
+        pour insertion avec chaînage automatique.
+        """
+        try:
+            from ..utils.db_manager import DatabaseManager
+            import json
+            
+            # Conversion de l'historique en chaîne de colonnes
+            coups = ''.join(str(col + 1) for col, _ in self.game.move_history)
+            
+            # Détermination du statut
+            statut = 'TERMINEE'
+            
+            # Préparation de la ligne gagnante au format JSON
+            ligne_gagnante = None
+            if self.game.winner is not None:
+                ligne_gagnante = json.dumps(self.game.winning_line)
+            
+            # Connexion et sauvegarde
+            db = DatabaseManager()
+            db.connect()
+            db.create_tables()
+            
+            game_id = db.insert_game(
+                coups=coups,
+                mode_jeu=self.gamemode,
+                statut=statut,
+                ligne_gagnante=ligne_gagnante
+            )
+            
+            db.disconnect()
+            
+            if game_id:
+                print(f"[DB] ✅ Partie sauvegardée avec l'ID {game_id}")
+            else:
+                print(f"[DB] ⚠️ Partie non sauvegardée (doublon possible)")
+                
+        except Exception as e:
+            print(f"[DB] ❌ Erreur lors de la sauvegarde : {e}")
         
         # Transition vers l'état GAME_OVER (grille figée)
         self.state = AppState.GAME_OVER

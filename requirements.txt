@@ -7,6 +7,10 @@ numpy>=1.24.0
 # Phase 2 : Interface graphique Pygame
 pygame>=2.5.0
 
+# Phase 3 : Base de données MySQL
+mysql-connector-python>=8.0.33
+python-dotenv>=1.0.0
+
 # Développement et qualité du code
 # mypy>=1.0.0          # Type checking statique
 # pytest>=7.4.0        # Tests unitaires

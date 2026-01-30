@@ -31,12 +31,16 @@ class AppState(Enum):
         SETTINGS: Écran de paramètres/configuration
         GAME: Partie en cours
         GAME_OVER: Fin de partie (grille figée, attente action utilisateur)
+        HISTORY_MENU: Liste des parties enregistrées
+        REPLAY_MODE: Mode visualisation d'une partie enregistrée
         QUIT: Fermeture de l'application
     """
     MENU = auto()
     SETTINGS = auto()
     GAME = auto()
     GAME_OVER = auto()
+    HISTORY_MENU = auto()
+    REPLAY_MODE = auto()
     QUIT = auto()
 
 

@@ -6,6 +6,10 @@ Gère une machine à états (Menu -> Jeu -> Retour au Menu).
 
 from typing import Optional
 import pygame
+import sys
+import time
+import subprocess
+import platform
 
 from ..models.game import Game
 from ..views.pygame_view import PygameView
@@ -88,6 +92,14 @@ class GameController:
             elif self.state == AppState.GAME_OVER:
                 print("[CONTROLLER DEBUG] État : GAME_OVER")
                 self.run_game_over()
+            
+            elif self.state == AppState.HISTORY_MENU:
+                print("[CONTROLLER DEBUG] État : HISTORY_MENU")
+                self.run_history_menu()
+            
+            elif self.state == AppState.REPLAY_MODE:
+                print("[CONTROLLER DEBUG] État : REPLAY_MODE")
+                self.run_replay_mode()
         
         # Fermeture propre
         print("\n[CONTROLLER DEBUG] === FERMETURE DE L'APPLICATION ===")
@@ -116,6 +128,52 @@ class GameController:
         
         self.view.update_display()
     
+    def _select_import_file(self) -> Optional[str]:
+        """
+        Ouvre un explorateur de fichiers pour sélectionner un fichier .txt à importer.
+        
+        Utilise osascript (AppleScript) sur macOS pour éviter les problèmes de tkinter.
+        
+        Returns:
+            Chemin du fichier sélectionné, ou None si annulé
+        """
+        try:
+            if platform.system() == "Darwin":  # macOS
+                # Utilisation d'AppleScript natif pour macOS
+                script = '''
+                tell application "System Events"
+                    activate
+                    set filePath to choose file with prompt "Sélectionner un fichier .txt à importer" of type {"txt"} default location (path to home folder)
+                    return POSIX path of filePath
+                end tell
+                '''
+                
+                result = subprocess.run(
+                    ['osascript', '-e', script],
+                    capture_output=True,
+                    text=True,
+                    timeout=60
+                )
+                
+                if result.returncode == 0 and result.stdout.strip():
+                    file_path = result.stdout.strip()
+                    print(f"[CONTROLLER DEBUG] Fichier sélectionné : {file_path}")
+                    return file_path
+                else:
+                    print("[CONTROLLER DEBUG] Sélection annulée")
+                    return None
+            else:
+                # Pour d'autres systèmes, retourner None
+                print("[CONTROLLER DEBUG] Sélection de fichier non supportée sur ce système")
+                return None
+                
+        except subprocess.TimeoutExpired:
+            print("[CONTROLLER ERROR] Timeout lors de la sélection du fichier")
+            return None
+        except Exception as e:
+            print(f"[CONTROLLER ERROR] Erreur lors de la sélection du fichier : {e}")
+            return None
+    
     def run_menu(self) -> None:
         """
         Gère l'affichage et les interactions du menu principal.
@@ -132,11 +190,14 @@ class GameController:
         """
         menu_active = True
         
+        # Import du DatabaseManager pour l'importation
+        from ..utils.db_manager import DatabaseManager
+        
         while menu_active and self.state == AppState.MENU:
             self.clock.tick(self.fps)
             
-            # Affichage du menu et récupération des rectangles de boutons
-            pvp_rect, pvai_rect, demo_rect, settings_rect = self.view.draw_menu()
+            # Affichage du menu et récupération des rectangles de boutons (6 boutons maintenant)
+            pvp_rect, pvai_rect, demo_rect, history_rect, import_rect, quit_rect = self.view.draw_menu()
             self.view.update_display()
             
             # Gestion des événements
@@ -184,11 +245,85 @@ class GameController:
                         self.state = AppState.GAME
                         menu_active = False
                     
-                    # Clic sur "Paramètres"
-                    elif settings_rect.collidepoint(mouse_pos):
-                        print("[CONTROLLER DEBUG] Ouverture des paramètres")
-                        self.state = AppState.SETTINGS
+                    # Clic sur "Historique"
+                    elif history_rect.collidepoint(mouse_pos):
+                        print("[CONTROLLER DEBUG] Ouverture de l'historique")
+                        self.state = AppState.HISTORY_MENU
                         menu_active = False
+                    
+                    # Clic sur "IMPORTER (.txt)"
+                    elif import_rect.collidepoint(mouse_pos):
+                        print("[CONTROLLER DEBUG] Bouton IMPORTER cliqué")
+                        
+                        # Ouverture de l'explorateur de fichiers
+                        file_path = self._select_import_file()
+                        
+                        if file_path:
+                            print(f"[CONTROLLER DEBUG] Fichier sélectionné : {file_path}")
+                            
+                            # Affichage du message "Importation en cours..."
+                            self.view.draw_status_message(
+                                "Importation en cours...",
+                                "info"
+                            )
+                            self.view.update_display()
+                            
+                            # Connexion à la base et import
+                            db = DatabaseManager()
+                            db.connect()
+                            db.create_tables()
+                            
+                            try:
+                                # Appel de la fonction d'importation avec le fichier sélectionné
+                                result = db.import_from_txt_file(file_path)
+                                
+                                # Affichage du résultat
+                                if result['success']:
+                                    message = f"Import réussi ! Partie ID {result['game_id']} ajoutée."
+                                    msg_type = "success"
+                                else:
+                                    message = f"Erreur : {result['error']}"
+                                    msg_type = "error" if "Erreur" in result['error'] else "warning"
+                                
+                                self.view.draw_status_message(message, msg_type)
+                                self.view.update_display()
+                                time.sleep(3)  # Pause de 3 secondes
+                                
+                            except Exception as e:
+                                print(f"[CONTROLLER ERROR] Erreur d'importation : {e}")
+                                self.view.draw_status_message(
+                                    f"Erreur d'importation : {str(e)}",
+                                    "error"
+                                )
+                                self.view.update_display()
+                                time.sleep(3)
+                            
+                            finally:
+                                db.disconnect()
+                        else:
+                            print("[CONTROLLER DEBUG] Sélection de fichier annulée")
+                    
+                    # Clic sur "QUITTER"
+                    elif quit_rect.collidepoint(mouse_pos):
+                        print("[CONTROLLER DEBUG] Bouton QUITTER cliqué")
+                        print("[CONTROLLER DEBUG] Fermeture propre de l'application...")
+                        
+                        # Fermeture de la connexion MySQL si elle existe
+                        try:
+                            db = DatabaseManager()
+                            if db.connection and db.connection.is_connected():
+                                db.disconnect()
+                                print("[CONTROLLER DEBUG] Connexion MySQL fermée")
+                        except Exception as e:
+                            print(f"[CONTROLLER DEBUG] Note : {e}")
+                        
+                        # Fermeture de Pygame
+                        pygame.quit()
+                        print("[CONTROLLER DEBUG] Pygame fermé")
+                        
+                        # Sortie de Python
+                        print("[CONTROLLER DEBUG] Au revoir !")
+                        sys.exit(0)
     
     def run_settings(self) -> None:
         """
@@ -777,3 +912,294 @@ class GameController:
         # Transition vers l'état GAME_OVER (grille figée)
         self.state = AppState.GAME_OVER
         print("[CONTROLLER DEBUG] Transition vers l'état GAME_OVER")
+    
+    def run_history_menu(self) -> None:
+        """
+        Affiche la liste des parties enregistrées dans la base de données.
+        Permet de sélectionner une partie pour la visualiser en mode replay.
+        """
+        from ..utils.db_manager import DatabaseManager
+        
+        print("\n[CONTROLLER DEBUG] === CHARGEMENT HISTORIQUE ===")
+        
+        # Chargement des parties depuis la base de données
+        db = DatabaseManager()
+        db.connect()
+        games = db.get_all_games(order_by='coups')
+        db.disconnect()
+        
+        print(f"[CONTROLLER DEBUG] {len(games)} partie(s) chargée(s)")
+        
+        history_active = True
+        
+        while history_active and self.state == AppState.HISTORY_MENU:
+            self.clock.tick(self.fps)
+            
+            # Affichage de l'historique
+            rects = self.view.draw_history_menu(games)
+            self.view.update_display()
+            
+            # Gestion des événements
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    self.state = AppState.QUIT
+                    history_active = False
+                    break
+                
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        self.state = AppState.MENU
+                        history_active = False
+                        break
+                
+                if event.type == pygame.MOUSEBUTTONDOWN:
+                    mouse_pos = event.pos
+                    
+                    # Clic sur "RETOUR"
+                    if rects['back'].collidepoint(mouse_pos):
+                        print("[CONTROLLER DEBUG] Retour au menu")
+                        self.state = AppState.MENU
+                        history_active = False
+                        break
+                    
+                    # Clic sur une partie
+                    for i in range(len(games[:10])):
+                        if i in rects and rects[i].collidepoint(mouse_pos):
+                            print(f"[CONTROLLER DEBUG] Partie {games[i]['id']} sélectionnée")
+                            self._load_replay(games[i])
+                            history_active = False
+                            break
+    
+    def _load_replay(self, game_data: dict) -> None:
+        """
+        Charge une partie pour le mode replay.
+        
+        Args:
+            game_data: Dictionnaire contenant les données de la partie
+        """
+        # Stockage des données de replay
+        self.replay_game_data = game_data
+        self.replay_current_move = 0
+        self.replay_show_symmetric = False
+        self.replay_auto_play = False
+        
+        # Création d'un plateau vide
+        from ..models.board import Board
+        config = self.config_manager.get_config()
+        self.replay_board = Board(rows=config['rows'], cols=config['cols'])
+        
+        print(f"[REPLAY DEBUG] Chargement partie ID {game_data['id']}")
+        print(f"[REPLAY DEBUG] Coups: {game_data['coups']}")
+        
+        # Transition vers le mode replay
+        self.state = AppState.REPLAY_MODE
+    
+    def run_replay_mode(self) -> None:
+        """
+        Mode visualisation d'une partie enregistrée avec navigation pas-à-pas.
+        """
+        print("\n[CONTROLLER DEBUG] === MODE REPLAY ===")
+        
+        replay_active = True
+        coups = self.replay_game_data['coups'] if not self.replay_show_symmetric else self.replay_game_data['coups_symetrique']
+        total_moves = len(coups)
+        
+        # Conversion des coups en liste (colonnes en base 1)
+        moves_list = [int(c) - 1 for c in coups]  # Conversion en base 0
+        
+        while replay_active and self.state == AppState.REPLAY_MODE:
+            self.clock.tick(self.fps)
+            
+            # Vérification des voisins dans le chaînage
+            has_prev = self.replay_game_data['id_antecedent'] is not None
+            has_next = self.replay_game_data['id_suivant'] is not None
+            
+            # Affichage du replay
+            rects = self.view.draw_replay_interface(
+                self.replay_board,
+                self.replay_current_move,
+                total_moves,
+                self.replay_game_data,
+                has_prev,
+                has_next,
+                self.replay_show_symmetric
+            )
+            
+            # Affichage de la ligne gagnante si on est à la fin
+            if self.replay_current_move == total_moves and self.replay_game_data['ligne_gagnante']:
+                try:
+                    import json
+                    import ast
+                    
+                    # Parsing robuste depuis la base de données
+                    coords_brutes = self.replay_game_data['ligne_gagnante']
+                    
+                    # Tentative de parsing JSON
+                    try:
+                        winning_line_raw = json.loads(coords_brutes)
+                    except (json.JSONDecodeError, TypeError):
+                        # Fallback: tentative de parsing avec ast.literal_eval
+                        try:
+                            winning_line_raw = ast.literal_eval(coords_brutes)
+                        except (ValueError, SyntaxError):
+                            print(f"[REPLAY ERROR] Impossible de parser les coordonnées: {coords_brutes}")
+                            winning_line_raw = None
+                    
+                    if winning_line_raw:
+                        # Conversion robuste en liste de tuples d'entiers
+                        # Format attendu: [(row, col), ...] en Base 0 (index Python)
+                        winning_line_converted = []
+                        for coord in winning_line_raw:
+                            if isinstance(coord, (list, tuple)) and len(coord) == 2:
+                                # Les coordonnées sont déjà en Base 0 depuis get_winning_positions()
+                                row, col = int(coord[0]), int(coord[1])
+                                # Vérification de sécurité
+                                if 0 <= row < 8 and 0 <= col < 9:
+                                    winning_line_converted.append((row, col))
+                                else:
+                                    print(f"[REPLAY WARNING] Coordonnée hors limites ignorée: ({row}, {col})")
+                        
+                        if winning_line_converted:
+                            self.view.draw_winning_highlight(winning_line_converted, self.replay_board)
+                        else:
+                            print("[REPLAY WARNING] Aucune coordonnée valide après conversion")
+                    
+                except Exception as e:
+                    print(f"[REPLAY ERROR] Erreur lors du surlignement: {e}")
+            
+            self.view.update_display()
+            
+            # Gestion des événements
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    self.state = AppState.QUIT
+                    replay_active = False
+                    break
+                
+                if event.type == pygame.KEYDOWN:
+                    # ECHAP : Retour à l'historique
+                    if event.key == pygame.K_ESCAPE:
+                        self.state = AppState.HISTORY_MENU
+                        replay_active = False
+                        break
+                    
+                    # Flèche GAUCHE : Coup précédent
+                    elif event.key == pygame.K_LEFT:
+                        if self.replay_current_move > 0:
+                            self._replay_undo_move()
+                            print(f"[REPLAY DEBUG] Coup {self.replay_current_move}/{total_moves}")
+                    
+                    # Flèche DROITE : Coup suivant
+                    elif event.key == pygame.K_RIGHT:
+                        if self.replay_current_move < total_moves:
+                            self._replay_play_move(moves_list[self.replay_current_move])
+                            print(f"[REPLAY DEBUG] Coup {self.replay_current_move}/{total_moves}")
+                    
+                    # M : Basculer vers symétrie
+                    elif event.key == pygame.K_m:
+                        self._toggle_symmetric()
+                    
+                    # ESPACE : Lecture automatique
+                    elif event.key == pygame.K_SPACE:
+                        self.replay_auto_play = not self.replay_auto_play
+                        print(f"[REPLAY DEBUG] Lecture auto: {self.replay_auto_play}")
+                
+                if event.type == pygame.MOUSEBUTTONDOWN:
+                    mouse_pos = event.pos
+                    
+                    # Bouton PRÉCÉDENT (partie antécédente)
+                    if rects['prev'] and rects['prev'].collidepoint(mouse_pos):
+                        self._load_neighbor_game('prev')
+                        # Recharger les coups
+                        coups = self.replay_game_data['coups'] if not self.replay_show_symmetric else self.replay_game_data['coups_symetrique']
+                        total_moves = len(coups)
+                        moves_list = [int(c) - 1 for c in coups]
+                    
+                    # Bouton SUIVANT (partie suivante)
+                    elif rects['next'] and rects['next'].collidepoint(mouse_pos):
+                        self._load_neighbor_game('next')
+                        # Recharger les coups
+                        coups = self.replay_game_data['coups'] if not self.replay_show_symmetric else self.replay_game_data['coups_symetrique']
+                        total_moves = len(coups)
+                        moves_list = [int(c) - 1 for c in coups]
+                    
+                    # Bouton SYMÉTRIE
+                    elif rects['symmetric'].collidepoint(mouse_pos):
+                        self._toggle_symmetric()
+                        coups = self.replay_game_data['coups'] if not self.replay_show_symmetric else self.replay_game_data['coups_symetrique']
+                        total_moves = len(coups)
+                        moves_list = [int(c) - 1 for c in coups]
+                    
+                    # Bouton RETOUR
+                    elif rects['back'].collidepoint(mouse_pos):
+                        self.state = AppState.HISTORY_MENU
+                        replay_active = False
+                        break
+            
+            # Lecture automatique
+            if self.replay_auto_play and self.replay_current_move < total_moves:
+                pygame.time.wait(500)  # Pause de 500ms entre chaque coup
+                self._replay_play_move(moves_list[self.replay_current_move])
+    
+    def _replay_play_move(self, col: int) -> None:
+        """Joue un coup dans le replay."""
+        if self.replay_board.is_valid_location(col):
+            row = self.replay_board.get_next_open_row(col)
+            player = 1 if (self.replay_current_move % 2 == 0) else 2
+            self.replay_board.drop_piece(row, col, player)
+            self.replay_current_move += 1
+    
+    def _replay_undo_move(self) -> None:
+        """Annule le dernier coup du replay."""
+        if self.replay_current_move > 0:
+            self.replay_board.undo_last_move()
+            self.replay_current_move -= 1
+    
+    def _toggle_symmetric(self) -> None:
+        """Bascule entre affichage normal et symétrique."""
+        self.replay_show_symmetric = not self.replay_show_symmetric
+        print(f"[REPLAY DEBUG] Mode symétrique: {self.replay_show_symmetric}")
+        
+        # Réinitialiser le plateau et rejouer avec la nouvelle séquence
+        config = self.config_manager.get_config()
+        from ..models.board import Board
+        self.replay_board = Board(rows=config['rows'], cols=config['cols'])
+        
+        coups = self.replay_game_data['coups_symetrique'] if self.replay_show_symmetric else self.replay_game_data['coups']
+        moves_list = [int(c) - 1 for c in coups]
+        
+        # Rejouer tous les coups jusqu'à la position actuelle
+        current_pos = self.replay_current_move
+        self.replay_current_move = 0
+        
+        for i in range(current_pos):
+            self._replay_play_move(moves_list[i])
+    
+    def _load_neighbor_game(self, direction: str) -> None:
+        """
+        Charge la partie voisine dans le chaînage.
+        
+        Args:
+            direction: 'prev' pour id_antecedent, 'next' pour id_suivant
+        """
+        from ..utils.db_manager import DatabaseManager
+        
+        neighbor_id = None
+        if direction == 'prev':
+            neighbor_id = self.replay_game_data['id_antecedent']
+        else:
+            neighbor_id = self.replay_game_data['id_suivant']
+        
+        if neighbor_id is None:
+            print(f"[REPLAY DEBUG] Pas de partie {direction}")
+            return
+        
+        # Chargement de la partie voisine
+        db = DatabaseManager()
+        db.connect()
+        neighbor_game = db.get_game_by_id(neighbor_id)
+        db.disconnect()
+        
+        if neighbor_game:
+            print(f"[REPLAY DEBUG] Chargement partie {neighbor_id} ({direction})")
+            self._load_replay(neighbor_game)

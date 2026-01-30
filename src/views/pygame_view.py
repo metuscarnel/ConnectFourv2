@@ -34,6 +34,10 @@ class PygameView:
     # Constantes visuelles calculées
     RADIUS: int = int(SQUARESIZE / 2 - 5)  # Rayon des pions (marge de 5px)
     
+    # Constantes de layout pour séparation grille/panneau
+    GAME_AREA_RATIO: float = 0.75  # 75% pour la zone de jeu
+    NAV_AREA_RATIO: float = 0.25   # 25% pour le panneau de navigation
+    
     def __init__(self) -> None:
         """
         Initialise la fenêtre Pygame avec les dimensions calculées dynamiquement.
@@ -49,6 +53,9 @@ class PygameView:
         self.height: int = HEIGHT
         self.radius: int = self.RADIUS
         
+        # Calcul des zones de layout
+        self._update_layout()
+        
         # Création de la fenêtre
         self.screen: pygame.Surface = pygame.display.set_mode((self.width, self.height))
         pygame.display.set_caption("Puissance 4 - Connect Four")
@@ -62,6 +69,40 @@ class PygameView:
         self.save_button_rect: Optional[pygame.Rect] = None
         self.load_button_rect: Optional[pygame.Rect] = None
         self.restart_button_rect: Optional[pygame.Rect] = None
+    
+    def _update_layout(self) -> None:
+        """
+        Calcule les zones de layout pour séparer la grille du panneau de navigation.
+        
+        Divise l'écran en deux zones :
+        - GAME_RECT (75% largeur) : Zone centrée pour la grille de jeu
+        - NAV_RECT (25% largeur) : Zone fixe pour le panneau de navigation/contrôles
+        
+        Calcule aussi CELL_SIZE dynamiquement pour que la grille tienne dans GAME_RECT.
+        """
+        # Zone de jeu (75% de la largeur)
+        game_width = int(self.width * self.GAME_AREA_RATIO)
+        self.game_rect = pygame.Rect(0, 0, game_width, self.height)
+        
+        # Zone de navigation (25% de la largeur, à droite)
+        nav_width = int(self.width * self.NAV_AREA_RATIO)
+        self.nav_rect = pygame.Rect(game_width, 0, nav_width, self.height)
+        
+        # Calcul dynamique de la taille des cellules
+        # La grille fait 9 colonnes + 1 pour les marges = 10 cellules en largeur
+        # La grille fait 8 lignes + 1 pour preview = 9 cellules en hauteur
+        cell_width = (game_width - 40) / 10  # -40px pour marges
+        cell_height = (self.height - 40) / 9  # -40px pour marges
+        
+        self.cell_size = int(min(cell_width, cell_height))
+        self.cell_radius = int(self.cell_size / 2 - 5)
+        
+        # Position de départ pour centrer la grille dans game_rect
+        grid_width = self.cell_size * COLS
+        grid_height = self.cell_size * (ROWS + 1)  # +1 pour preview
+        
+        self.grid_start_x = (game_width - grid_width) // 2
+        self.grid_start_y = (self.height - grid_height) // 2
     
     def draw_board(self, board: Board, mouse_x: Optional[int] = None, current_player: int = PLAYER1, ai_scores: Optional[dict] = None, ai_player: int = 2, winning_line: Optional[list[tuple[int, int]]] = None) -> None:
         """
@@ -90,10 +131,11 @@ class PygameView:
         # ========================================
         
         # Fond noir pour la zone d'en-tête
+        header_height = self.cell_size  # Header a la même hauteur qu'une cellule
         pygame.draw.rect(
             self.screen,
             BLACK,
-            (0, 0, self.width, HEADER_HEIGHT)
+            (self.grid_start_x, self.grid_start_y, self.cell_size * COLS, header_height)
         )
         
         # ========================================
@@ -104,20 +146,19 @@ class PygameView:
         pygame.draw.rect(
             self.screen,
             BLUE,
-            (0, HEADER_HEIGHT, self.width, self.height - HEADER_HEIGHT)
+            (self.grid_start_x, self.grid_start_y + header_height, self.cell_size * COLS, self.cell_size * ROWS)
         )
         
         # Dessin des cercles (pions et cases vides)
         for row in range(board.rows):
             for col in range(board.cols):
                 # Position centrale X (pas d'inversion)
-                center_x = int(col * SQUARESIZE + SQUARESIZE / 2)
+                center_x = int(self.grid_start_x + col * self.cell_size + self.cell_size / 2)
                 
                 # Position centrale Y - INVERSION OBLIGATOIRE + DÉCALAGE HEADER
                 # row=0 -> Y grand (bas du plateau, juste au-dessus du bord inférieur)
                 # row=rows-1 -> Y petit (haut du plateau, juste en dessous du header)
-                # Formule : HEADER_HEIGHT + (rows * SQUARESIZE) - (row * SQUARESIZE + SQUARESIZE/2)
-                center_y = int(HEADER_HEIGHT + (board.rows * SQUARESIZE) - (row * SQUARESIZE + SQUARESIZE / 2))
+                center_y = int(self.grid_start_y + header_height + (board.rows * self.cell_size) - (row * self.cell_size + self.cell_size / 2))
                 
                 # Récupération de la valeur de la case
                 cell_value = board.grid[row][col]
@@ -133,15 +174,15 @@ class PygameView:
                     color = WHITE  # Sécurité
                 
                 # Dessin du cercle
-                pygame.draw.circle(self.screen, color, (center_x, center_y), self.radius)
+                pygame.draw.circle(self.screen, color, (center_x, center_y), self.cell_radius)
         
         # ========================================
         # COUCHE 2 : PION FANTÔME (OPTIONNEL)
         # ========================================
         
         if mouse_x is not None:
-            # Calcul de la colonne survolée
-            col = mouse_x // SQUARESIZE
+            # Calcul de la colonne survolée (relatif à la grille)
+            col = (mouse_x - self.grid_start_x) // self.cell_size
             
             # Vérification que la colonne est dans les limites ET valide
             if 0 <= col < board.cols and board.is_valid_location(col):
@@ -150,11 +191,11 @@ class PygameView:
                 
                 # Position centrale du pion fantôme au-dessus de la colonne
                 # Placé juste au-dessus du plateau (dans la partie basse du header)
-                center_x = int(col * SQUARESIZE + SQUARESIZE / 2)
-                center_y = int(HEADER_HEIGHT - SQUARESIZE / 2)
+                center_x = int(self.grid_start_x + col * self.cell_size + self.cell_size / 2)
+                center_y = int(self.grid_start_y + header_height / 2)
                 
                 # Dessin du pion fantôme dans le header
-                pygame.draw.circle(self.screen, ghost_color, (center_x, center_y), self.radius)
+                pygame.draw.circle(self.screen, ghost_color, (center_x, center_y), self.cell_radius)
         
         # ========================================
         # COUCHE 3 : UI FIXE (TOUJOURS EN DERNIER)
@@ -322,21 +363,22 @@ class PygameView:
             return
         
         # Effacement de la zone de prévisualisation
+        header_height = self.cell_size
         pygame.draw.rect(
             self.screen,
             BLACK,
-            (0, 0, self.width, SQUARESIZE)
+            (self.grid_start_x, self.grid_start_y, self.cell_size * COLS, header_height)
         )
         
         # Couleur du pion selon le joueur
         color = RED if player == PLAYER1 else YELLOW
         
-        # Position centrale
-        center_x = int(col * SQUARESIZE + SQUARESIZE / 2)
-        center_y = int(SQUARESIZE / 2)
+        # Position centrale (relative à la grille)
+        center_x = int(self.grid_start_x + col * self.cell_size + self.cell_size / 2)
+        center_y = int(self.grid_start_y + header_height / 2)
         
         # Dessin du pion fantôme
-        pygame.draw.circle(self.screen, color, (center_x, center_y), self.radius)
+        pygame.draw.circle(self.screen, color, (center_x, center_y), self.cell_radius)
     
     def draw_winning_positions(self, winning_positions: list[tuple[int, int]], board: Optional[Board] = None) -> None:
         """
@@ -353,18 +395,19 @@ class PygameView:
         
         # Si board n'est pas fourni, utiliser ROWS par défaut (compatibilité arrière)
         rows = board.rows if board else ROWS
+        header_height = self.cell_size
         
         for row, col in winning_positions:
-            # Calcul des coordonnées avec correction de l'axe Y + décalage header
-            center_x = int(col * SQUARESIZE + SQUARESIZE / 2)
-            center_y = int(HEADER_HEIGHT + (rows * SQUARESIZE) - (row * SQUARESIZE + SQUARESIZE / 2))
+            # Calcul des coordonnées avec correction de l'axe Y + décalage header (relatif à la grille)
+            center_x = int(self.grid_start_x + col * self.cell_size + self.cell_size / 2)
+            center_y = int(self.grid_start_y + header_height + (rows * self.cell_size) - (row * self.cell_size + self.cell_size / 2))
             
             # Dessin d'un cercle vert épais autour du pion
             pygame.draw.circle(
                 self.screen,
                 GREEN,
                 (center_x, center_y),
-                self.radius + 5,
+                self.cell_radius + 5,
                 8  # Épaisseur du contour
             )
     
@@ -376,10 +419,11 @@ class PygameView:
             winner: PLAYER1, PLAYER2 si victoire, None si égalité
         """
         # Effacement de la zone de prévisualisation
+        header_height = self.cell_size
         pygame.draw.rect(
             self.screen,
             BLACK,
-            (0, 0, self.width, SQUARESIZE)
+            (self.grid_start_x, self.grid_start_y, self.cell_size * COLS, header_height)
         )
         
         # Création du message
@@ -396,8 +440,9 @@ class PygameView:
         # Rendu du texte
         label = self.font.render(text, True, color)
         
-        # Centrage du texte
-        text_rect = label.get_rect(center=(self.width // 2, SQUARESIZE // 2))
+        # Centrage du texte dans la zone de header
+        grid_center_x = self.grid_start_x + (self.cell_size * COLS) // 2
+        text_rect = label.get_rect(center=(grid_center_x, self.grid_start_y + header_height // 2))
         
         self.screen.blit(label, text_rect)
     
@@ -493,6 +538,7 @@ class PygameView:
         Convertit une position X de souris en index de colonne.
         
         Méthode utilitaire pour traduire les coordonnées écran en logique de jeu.
+        Prend en compte la position décalée de la grille.
         
         Args:
             x_pos: Position X de la souris en pixels
@@ -500,14 +546,15 @@ class PygameView:
         Returns:
             Index de la colonne (0 à COLS-1), ou None si hors limites
         """
-        col = x_pos // SQUARESIZE
+        # Calcul relatif à la position de la grille
+        col = (x_pos - self.grid_start_x) // self.cell_size
         
         if 0 <= col < COLS:
             return col
         
         return None
     
-    def draw_menu(self) -> tuple[pygame.Rect, pygame.Rect, pygame.Rect, pygame.Rect]:
+    def draw_menu(self) -> tuple[pygame.Rect, pygame.Rect, pygame.Rect, pygame.Rect, pygame.Rect, pygame.Rect]:
         """
         Affiche le menu principal avec les options de jeu.
         
@@ -516,10 +563,12 @@ class PygameView:
         - Bouton "Joueur vs Joueur"
         - Bouton "Joueur vs IA"
         - Bouton "MODE DÉMO (IA vs IA)"
-        - Bouton "Paramètres"
+        - Bouton "Historique"
+        - Bouton "IMPORTER (.txt)"
+        - Bouton "QUITTER"
         
         Returns:
-            Tuple contenant (rect_pvp, rect_pvai, rect_demo, rect_settings) pour la détection des clics
+            Tuple contenant (pvp, pvai, demo, history, import, quit) pour la détection des clics
         """
         # Fond bleu foncé
         self.screen.fill((20, 40, 80))
@@ -592,20 +641,50 @@ class PygameView:
         demo_text_rect = demo_label.get_rect(center=demo_rect.center)
         self.screen.blit(demo_label, demo_text_rect)
         
-        # Bouton 4 : Paramètres
-        settings_rect = pygame.Rect(
+        # Bouton 4 : Historique
+        history_rect = pygame.Rect(
             self.width // 2 - button_width // 2,
             start_y + (button_height + button_spacing) * 3,
             button_width,
             button_height
         )
-        pygame.draw.rect(self.screen, (100, 100, 100), settings_rect)  # Gris
-        pygame.draw.rect(self.screen, WHITE, settings_rect, 3)  # Contour blanc
+        pygame.draw.rect(self.screen, (150, 100, 200), history_rect)  # Violet
+        pygame.draw.rect(self.screen, WHITE, history_rect, 3)  # Contour blanc
         
-        settings_text = "Parametres"
-        settings_label = button_font.render(settings_text, True, WHITE)
-        settings_text_rect = settings_label.get_rect(center=settings_rect.center)
-        self.screen.blit(settings_label, settings_text_rect)
+        history_text = "Historique"
+        history_label = button_font.render(history_text, True, WHITE)
+        history_text_rect = history_label.get_rect(center=history_rect.center)
+        self.screen.blit(history_label, history_text_rect)
+        
+        # Bouton 5 : IMPORTER (.txt)
+        import_rect = pygame.Rect(
+            self.width // 2 - button_width // 2,
+            start_y + (button_height + button_spacing) * 4,
+            button_width,
+            button_height
+        )
+        pygame.draw.rect(self.screen, (50, 150, 200), import_rect)  # Bleu
+        pygame.draw.rect(self.screen, WHITE, import_rect, 3)  # Contour blanc
+        
+        import_text = "IMPORTER (.txt)"
+        import_label = button_font.render(import_text, True, WHITE)
+        import_text_rect = import_label.get_rect(center=import_rect.center)
+        self.screen.blit(import_label, import_text_rect)
+        
+        # Bouton 6 : QUITTER
+        quit_rect = pygame.Rect(
+            self.width // 2 - button_width // 2,
+            start_y + (button_height + button_spacing) * 5,
+            button_width,
+            button_height
+        )
+        pygame.draw.rect(self.screen, (200, 50, 50), quit_rect)  # Rouge
+        pygame.draw.rect(self.screen, WHITE, quit_rect, 3)  # Contour blanc
+        
+        quit_text = "QUITTER"
+        quit_label = button_font.render(quit_text, True, WHITE)
+        quit_text_rect = quit_label.get_rect(center=quit_rect.center)
+        self.screen.blit(quit_label, quit_text_rect)
         
         # Instructions en bas
         info_font = pygame.font.SysFont("monospace", 20)
@@ -614,7 +693,79 @@ class PygameView:
         info_rect = info_label.get_rect(center=(self.width // 2, self.height - 50))
         self.screen.blit(info_label, info_rect)
         
-        return pvp_rect, pvai_rect, demo_rect, settings_rect
+        return pvp_rect, pvai_rect, demo_rect, history_rect, import_rect, quit_rect
+    
+    def draw_status_message(self, message: str, msg_type: str = "info") -> None:
+        """
+        Affiche un message de statut semi-transparent au centre de l'écran.
+        
+        Utilisé pour afficher des notifications temporaires (importation, sauvegarde, etc.)
+        
+        Args:
+            message: Le texte du message à afficher
+            msg_type: Type de message - "info", "success", "error", "warning"
+        """
+        # Couleurs selon le type
+        colors = {
+            "info": (50, 150, 200),      # Bleu
+            "success": (50, 180, 50),    # Vert
+            "error": (200, 50, 50),      # Rouge
+            "warning": (220, 180, 50)    # Jaune/Orange
+        }
+        
+        bg_color = colors.get(msg_type, colors["info"])
+        
+        # Police pour le message
+        msg_font = pygame.font.SysFont("monospace", 32, bold=True)
+        
+        # Découpage du message en lignes si trop long (word wrapping simple)
+        max_width = self.width - 200
+        words = message.split()
+        lines = []
+        current_line = []
+        
+        for word in words:
+            test_line = ' '.join(current_line + [word])
+            test_surface = msg_font.render(test_line, True, WHITE)
+            if test_surface.get_width() <= max_width:
+                current_line.append(word)
+            else:
+                if current_line:
+                    lines.append(' '.join(current_line))
+                    current_line = [word]
+                else:
+                    lines.append(word)
+        
+        if current_line:
+            lines.append(' '.join(current_line))
+        
+        # Calcul de la taille de la boîte
+        line_height = 45
+        box_height = len(lines) * line_height + 40
+        box_width = max_width + 100
+        
+        # Position centrée
+        box_x = (self.width - box_width) // 2
+        box_y = (self.height - box_height) // 2
+        
+        # Surface semi-transparente
+        overlay = pygame.Surface((box_width, box_height))
+        overlay.set_alpha(220)  # Légère transparence
+        overlay.fill(bg_color)
+        
+        # Dessiner l'overlay
+        self.screen.blit(overlay, (box_x, box_y))
+        
+        # Contour blanc
+        pygame.draw.rect(self.screen, WHITE, (box_x, box_y, box_width, box_height), 4)
+        
+        # Affichage du texte ligne par ligne
+        for i, line in enumerate(lines):
+            text_surface = msg_font.render(line, True, WHITE)
+            text_rect = text_surface.get_rect(
+                center=(self.width // 2, box_y + 20 + i * line_height + line_height // 2)
+            )
+            self.screen.blit(text_surface, text_rect)
     
     def draw_settings(self, config: dict) -> dict[str, pygame.Rect]:
         """
@@ -784,11 +935,12 @@ class PygameView:
         score_color = RED if ai_player == 1 else YELLOW
         
         # Affichage au-dessus de chaque colonne dans le header
+        header_height = self.cell_size
         for col, score in column_scores.items():
-            # Position X centrée sur la colonne
-            center_x = int(col * SQUARESIZE + SQUARESIZE / 2)
+            # Position X centrée sur la colonne (relatif à la grille)
+            center_x = int(self.grid_start_x + col * self.cell_size + self.cell_size / 2)
             # Position Y dans le header (légèrement en dessous du haut)
-            y_pos = HEADER_HEIGHT - 35
+            y_pos = self.grid_start_y + header_height - 35
             
             # Formatage du score
             score_text = f"{int(score)}"
@@ -902,21 +1054,43 @@ class PygameView:
         """
         Met en valeur les pions gagnants avec un contour doré animé.
         
+        IMPORTANT : Les coordonnées doivent être au format Base 0 (index Python).
+        Format attendu : [(row, col), ...] où row ∈ [0, 7] et col ∈ [0, 8]
+        
         Args:
-            winning_line: Liste des coordonnées (row, col) des pions gagnants
+            winning_line: Liste des coordonnées (row, col) des pions gagnants en Base 0
             board: Instance du plateau pour calculer les positions
         """
+        if not winning_line:
+            return
+        
         # Couleur dorée avec effet de brillance
         GOLD = (255, 215, 0)
+        WHITE = (255, 255, 255)
+        header_height = self.cell_size
         
-        for row, col in winning_line:
-            # Calcul de la position centrale du pion
-            center_x = int(col * SQUARESIZE + SQUARESIZE / 2)
-            center_y = int(HEADER_HEIGHT + (board.rows * SQUARESIZE) - (row * SQUARESIZE + SQUARESIZE / 2))
+        for coord in winning_line:
+            # Vérification du format
+            if not isinstance(coord, (list, tuple)) or len(coord) != 2:
+                print(f"[VIEW WARNING] Format de coordonnée invalide: {coord}")
+                continue
+            
+            row, col = coord[0], coord[1]
+            
+            # SÉCURITÉ : Vérification des limites (grille 8x9, Base 0)
+            if not (0 <= row < board.rows and 0 <= col < board.cols):
+                print(f"[VIEW WARNING] Coordonnée hors limites ignorée: ({row}, {col}) pour grille {board.rows}x{board.cols}")
+                continue
+            
+            # Calcul de la position centrale du pion (relatif à la grille centrée)
+            # col = position X (horizontal)
+            # row = position Y (vertical, avec inversion car row=0 est en BAS)
+            center_x = int(self.grid_start_x + col * self.cell_size + self.cell_size / 2)
+            center_y = int(self.grid_start_y + header_height + (board.rows * self.cell_size) - (row * self.cell_size + self.cell_size / 2))
             
             # Dessin de plusieurs cercles concentriques pour effet de brillance
-            pygame.draw.circle(self.screen, GOLD, (center_x, center_y), self.radius + 8, 6)
-            pygame.draw.circle(self.screen, (255, 255, 255), (center_x, center_y), self.radius + 4, 3)
+            pygame.draw.circle(self.screen, GOLD, (center_x, center_y), self.cell_radius + 8, 6)
+            pygame.draw.circle(self.screen, WHITE, (center_x, center_y), self.cell_radius + 4, 3)
     
     def draw_victory_overlay(self, winner: Optional[int], winning_line: list[tuple[int, int]]) -> None:
         """
@@ -984,6 +1158,210 @@ class PygameView:
         
         self.screen.blit(restart_surface, restart_rect)
         self.screen.blit(menu_surface, menu_rect)
+    
+    def wait(self, milliseconds: int) -> None:
+        """
+        Pause l'exécution pendant un nombre de millisecondes.
+        
+        Args:
+            milliseconds: Durée de la pause en ms
+        """
+        pygame.time.wait(milliseconds)
+    
+    def draw_history_menu(self, games: list) -> dict:
+        """
+        Affiche l'écran d'historique avec la liste des parties enregistrées.
+        
+        Args:
+            games: Liste des parties récupérées depuis la base de données
+            
+        Returns:
+            Dictionnaire des rectangles cliquables {index: rect, 'back': rect}
+        """
+        # Fond noir
+        self.screen.fill(BLACK)
+        
+        # Titre
+        title_font = pygame.font.SysFont("monospace", 42, bold=True)
+        title_text = title_font.render("HISTORIQUE DES PARTIES", True, (255, 215, 0))
+        title_rect = title_text.get_rect(center=(self.width // 2, 40))
+        self.screen.blit(title_text, title_rect)
+        
+        # Sous-titre avec nombre de parties
+        subtitle_font = pygame.font.SysFont("monospace", 20)
+        subtitle_text = subtitle_font.render(f"{len(games)} partie(s) enregistrée(s)", True, WHITE)
+        subtitle_rect = subtitle_text.get_rect(center=(self.width // 2, 85))
+        self.screen.blit(subtitle_text, subtitle_rect)
+        
+        # Liste des parties (scrollable)
+        game_font = pygame.font.SysFont("monospace", 16)
+        start_y = 130
+        item_height = 60
+        rects = {}
+        
+        for i, game in enumerate(games[:10]):  # Limiter à 10 parties visibles
+            y = start_y + i * item_height
+            
+            # Rectangle de sélection
+            rect = pygame.Rect(50, y, self.width - 100, item_height - 10)
+            pygame.draw.rect(self.screen, (40, 40, 40), rect)
+            pygame.draw.rect(self.screen, (100, 100, 255), rect, 2)
+            
+            # Informations de la partie
+            text_x = 70
+            
+            # Ligne 1: ID et Date
+            id_text = game_font.render(f"ID: {game['id']} - {game['created_at']}", True, (200, 200, 200))
+            self.screen.blit(id_text, (text_x, y + 5))
+            
+            # Ligne 2: Coups et Mode
+            coups_display = game['coups'][:20] + "..." if len(game['coups']) > 20 else game['coups']
+            info_text = game_font.render(f"Coups: {coups_display} | Mode: {game['mode_jeu']}", True, WHITE)
+            self.screen.blit(info_text, (text_x, y + 25))
+            
+            rects[i] = rect
+        
+        # Bouton RETOUR
+        back_button = pygame.Rect(self.width // 2 - 100, self.height - 80, 200, 50)
+        pygame.draw.rect(self.screen, (100, 50, 50), back_button)
+        pygame.draw.rect(self.screen, WHITE, back_button, 3)
+        
+        back_text = pygame.font.SysFont("monospace", 22, bold=True).render("RETOUR", True, WHITE)
+        back_text_rect = back_text.get_rect(center=back_button.center)
+        self.screen.blit(back_text, back_text_rect)
+        
+        rects['back'] = back_button
+        
+        return rects
+    
+    def draw_replay_interface(self, board: Board, current_move: int, total_moves: int, 
+                             game_info: dict, has_prev: bool, has_next: bool, 
+                             show_symmetric: bool = False) -> dict:
+        """
+        Affiche l'interface de replay avec contrôles de navigation.
+        
+        Args:
+            board: Plateau de jeu actuel
+            current_move: Numéro du coup actuel (0-indexed)
+            total_moves: Nombre total de coups
+            game_info: Informations sur la partie (ID, coups, mode, etc.)
+            has_prev: True si une partie précédente existe (id_antecedent)
+            has_next: True si une partie suivante existe (id_suivant)
+            show_symmetric: True pour afficher la version symétrique
+            
+        Returns:
+            Dictionnaire des rectangles cliquables
+        """
+        # Affichage du plateau dans la zone de jeu
+        self.draw_board(board)
+        
+        # Panneau latéral droit (zone NAV_RECT)
+        panel_x = self.nav_rect.x
+        panel_y = self.nav_rect.y + 10
+        panel_width = self.nav_rect.width - 20
+        panel_height = self.nav_rect.height - 20
+        
+        # Fond opaque du panneau
+        panel_rect = pygame.Rect(panel_x, panel_y, panel_width, panel_height)
+        pygame.draw.rect(self.screen, (30, 30, 30), panel_rect)
+        pygame.draw.rect(self.screen, (255, 215, 0), panel_rect, 3)
+        
+        # Taille de police adaptative
+        title_size = max(14, min(20, panel_width // 15))
+        info_size = max(10, min(14, panel_width // 20))
+        
+        # Titre du panneau
+        title_font = pygame.font.SysFont("monospace", title_size, bold=True)
+        mode_text = "MODE MIROIR" if show_symmetric else "MODE REPLAY"
+        title_surface = title_font.render(mode_text, True, (255, 215, 0))
+        title_rect = title_surface.get_rect(centerx=panel_x + panel_width // 2, y=panel_y + 10)
+        self.screen.blit(title_surface, title_rect)
+        
+        # Informations de la partie
+        info_font = pygame.font.SysFont("monospace", info_size)
+        info_y = panel_y + 50
+        
+        infos = [
+            f"ID: {game_info['id']}",
+            f"Mode: {game_info['mode_jeu']}",
+            f"Coups: {current_move}/{total_moves}",
+            "",
+            "NAVIGATION:",
+            "[←] Précédent",
+            "[→] Suivant",
+            "[Espace] Auto",
+            "[M] Symétrie",
+            "[Echap] Retour"
+        ]
+        
+        line_height = max(18, info_size + 4)
+        for i, line in enumerate(infos):
+            color = (255, 215, 0) if line == "NAVIGATION:" else WHITE
+            text = info_font.render(line, True, color)
+            self.screen.blit(text, (panel_x + 10, info_y + i * line_height))
+        
+        # Boutons de navigation entre parties
+        button_y = panel_y + panel_height - 200
+        button_width = (panel_width - 30) // 2
+        button_height = max(35, min(50, panel_height // 12))
+        button_spacing = 10
+        
+        rects = {}
+        
+        # Bouton PRÉCÉDENT
+        prev_button = pygame.Rect(panel_x + 10, button_y, button_width, button_height)
+        prev_color = (50, 100, 50) if has_prev else (50, 50, 50)
+        pygame.draw.rect(self.screen, prev_color, prev_button)
+        pygame.draw.rect(self.screen, WHITE, prev_button, 2)
+        
+        prev_label = "← PRÉC" if panel_width < 200 else "← PRÉCÉDENT"
+        prev_text = info_font.render(prev_label, True, WHITE if has_prev else (100, 100, 100))
+        prev_text_rect = prev_text.get_rect(center=prev_button.center)
+        self.screen.blit(prev_text, prev_text_rect)
+        
+        rects['prev'] = prev_button if has_prev else None
+        
+        # Bouton SUIVANT
+        next_button = pygame.Rect(panel_x + button_width + 20, button_y, button_width, button_height)
+        next_color = (50, 100, 50) if has_next else (50, 50, 50)
+        pygame.draw.rect(self.screen, next_color, next_button)
+        pygame.draw.rect(self.screen, WHITE, next_button, 2)
+        
+        next_label = "SUIV →" if panel_width < 200 else "SUIVANT →"
+        next_text = info_font.render(next_label, True, WHITE if has_next else (100, 100, 100))
+        next_text_rect = next_text.get_rect(center=next_button.center)
+        self.screen.blit(next_text, next_text_rect)
+        
+        rects['next'] = next_button if has_next else None
+        
+        # Bouton SYMÉTRIE
+        sym_button = pygame.Rect(panel_x + 10, button_y + button_height + button_spacing, 
+                                panel_width - 20, button_height)
+        sym_color = (100, 50, 150) if show_symmetric else (50, 50, 100)
+        pygame.draw.rect(self.screen, sym_color, sym_button)
+        pygame.draw.rect(self.screen, WHITE, sym_button, 2)
+        
+        sym_label = "⇄ SYM" if panel_width < 200 else "⇄ VOIR SYMÉTRIE"
+        sym_text = info_font.render(sym_label, True, WHITE)
+        sym_text_rect = sym_text.get_rect(center=sym_button.center)
+        self.screen.blit(sym_text, sym_text_rect)
+        
+        rects['symmetric'] = sym_button
+        
+        # Bouton RETOUR
+        back_button = pygame.Rect(panel_x + 10, button_y + 2 * (button_height + button_spacing), 
+                                 panel_width - 20, button_height)
+        pygame.draw.rect(self.screen, (100, 50, 50), back_button)
+        pygame.draw.rect(self.screen, WHITE, back_button, 2)
+        
+        back_label = "RETOUR" if panel_width < 200 else "RETOUR MENU"
+        back_text = info_font.render(back_label, True, WHITE)
+        back_text_rect = back_text.get_rect(center=back_button.center)
+        self.screen.blit(back_text, back_text_rect)
+        
+        rects['back'] = back_button
+        
+        return rects
     
     def wait(self, milliseconds: int) -> None:
         """
